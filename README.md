@@ -73,6 +73,67 @@ jwebserver -p 9090 -d profiling/results
 ```
 puis http://localhost:9090/cpu-flamegraph.html.
 
+### `tools/analyze_bottleneck.py` — quantifier le goulet
+
+Le flamegraph montre visuellement où passe le CPU ; ce script le chiffre :
+% d'échantillons dans `Board.copy()` (copie du plateau) vs `MoveGenerator`
+(génération de coups) vs `Bot.evaluate`, plus le top 10 des frames feuilles.
+Apporte : un chiffre exact à citer ("64,6% du CPU dans MoveGenerator") au lieu
+d'un "ça a l'air gros sur le flamegraph".
+
+```bash
+python3 tools/analyze_bottleneck.py profiling/results/cpu.jfr
+```
+
+Résultat mesuré :
+```
+Board.copy() (copie du plateau) : 161 (25.2%)
+MoveGenerator (generation)       : 413 (64.6%)
+Bot.evaluate (evaluation)        : 30 (4.7%)
+```
+→ confirme que `MoveGenerator` (pas `Board.copy()`) est le vrai goulet, avant
+même toute optimisation.
+
+### `tools/benchstat.py` — preuve statistique (avant/après)
+
+`Bench` donne un seul run ; le bruit machine (autre process, JIT warmup...)
+peut faire croire à un gain qui n'existe pas. Ce script relance N fois,
+calcule moyenne/écart-type, et — une fois une version optimisée disponible —
+compare les deux avec un delta et un verdict "gain confirmé" ou "bruit".
+Apporte : un gain défendable statistiquement, pas un chiffre d'un seul run.
+
+```bash
+python3 tools/benchstat.py 7                      # baseline seule (stabilité)
+python3 tools/benchstat.py 7 dames.Bench dames.BenchOptimise  # une fois l'optim faite
+```
+
+### `tools/annotate_flamegraph.py` — annoter pour le rapport
+
+Dessine un rectangle + légende sur une capture PNG du flamegraph (`google-chrome
+--headless --screenshot=...`), pour pointer visuellement le goulet dans le
+rapport final. Apporte : un flamegraph brut au lecteur ne dit rien sans
+légende ; l'annotation ("64% MoveGenerator") rend la capture auto-porteuse.
+
+```bash
+# 1. capturer le flamegraph HTML en PNG (headless, sans dépendance serveur)
+google-chrome --headless --disable-gpu --window-size=1600,1000 \
+  --screenshot=profiling/results/cpu-flamegraph.png \
+  "file://$(pwd)/profiling/results/cpu-flamegraph.html"
+
+# 2. annoter le cluster MoveGenerator (legalMoves + collectCaptures)
+python3 tools/annotate_flamegraph.py profiling/results/cpu-flamegraph.png \
+  profiling/results/cpu-flamegraph-annote.png \
+  "480,208,880,62,64% MoveGenerator"
+```
+(nécessite Pillow : `pip install pillow`)
+
+Résultat : `profiling/results/cpu-flamegraph-annote.png` — rectangle rouge autour
+du cluster `MoveGenerator.legalMoves`/`collectCaptures`, la zone qui concentre
+~64% du CPU mesuré par `analyze_bottleneck.py` ci-dessus. Les coordonnées
+dépendent de la taille de la capture (1600×1000 ici) et du run profilé ; à
+réajuster visuellement si le flamegraph change de forme. Fichier ignoré par
+git (`profiling/results/`) — à régénérer et joindre au rapport final.
+
 ## Todolist optimisations
 
 - [ ] `Board.copy()` par noeud minimax → `apply`/`undo` en place

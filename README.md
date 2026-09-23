@@ -38,8 +38,18 @@ précédente tant que la page reste ouverte.
 ```bash
 mvn -q exec:java -Dexec.mainClass=dames.Api
 ```
-puis ouvrir http://localhost:8080. Code : [`Api.java`](src/main/java/dames/Api.java),
-[`web/`](src/main/resources/web/).
+puis ouvrir http://localhost:8080.
+
+Port 8080 déjà pris sur la machine (ex. dashboard Traefik d'un autre projet) ?
+Passer un autre port en argument :
+```bash
+mvn -q exec:java -Dexec.mainClass=dames.Api -Dexec.args="9090"
+# ou, sans Maven :
+mvn -q -B package -DskipTests && java -cp target/classes dames.Api 9090
+```
+puis ouvrir http://localhost:9090.
+
+Code : [`Api.java`](src/main/java/dames/Api.java), [`web/`](src/main/resources/web/).
 
 ## Tests
 

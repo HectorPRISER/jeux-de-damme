@@ -115,10 +115,24 @@ rapport final. Apporte : un flamegraph brut au lecteur ne dit rien sans
 légende ; l'annotation ("64% MoveGenerator") rend la capture auto-porteuse.
 
 ```bash
-python3 tools/annotate_flamegraph.py cpu-flamegraph.png cpu-flamegraph-annote.png \
-  "0,177,1265,140,64% MoveGenerator"
+# 1. capturer le flamegraph HTML en PNG (headless, sans dépendance serveur)
+google-chrome --headless --disable-gpu --window-size=1600,1000 \
+  --screenshot=profiling/results/cpu-flamegraph.png \
+  "file://$(pwd)/profiling/results/cpu-flamegraph.html"
+
+# 2. annoter le cluster MoveGenerator (legalMoves + collectCaptures)
+python3 tools/annotate_flamegraph.py profiling/results/cpu-flamegraph.png \
+  profiling/results/cpu-flamegraph-annote.png \
+  "480,208,880,62,64% MoveGenerator"
 ```
 (nécessite Pillow : `pip install pillow`)
+
+Résultat : `profiling/results/cpu-flamegraph-annote.png` — rectangle rouge autour
+du cluster `MoveGenerator.legalMoves`/`collectCaptures`, la zone qui concentre
+~64% du CPU mesuré par `analyze_bottleneck.py` ci-dessus. Les coordonnées
+dépendent de la taille de la capture (1600×1000 ici) et du run profilé ; à
+réajuster visuellement si le flamegraph change de forme. Fichier ignoré par
+git (`profiling/results/`) — à régénérer et joindre au rapport final.
 
 ## Todolist optimisations
 

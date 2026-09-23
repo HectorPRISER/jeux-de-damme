@@ -25,6 +25,22 @@ mvn -q exec:java
     (coups, temps, Mo alloués, noeuds/s) — pratique pour comparer avant/après
     optimisation sur une partie entière plutôt qu'un seul appel isolé.
 
+## Front web — parties en direct
+
+Mirror dans le navigateur de ce qui s'affiche dans le terminal en mode bot vs
+bot (`dames.Main`, mode 2) : même plateau, mêmes coups, mêmes métriques,
+diffusés ligne par ligne via Server-Sent Events par un petit serveur HTTP JDK
+natif (`com.sun.net.httpserver`, aucune dépendance ajoutée) — `Api` appelle le
+même `Main.runBotVsBot`, juste redirigé vers le flux SSE au lieu de
+`System.out`. Une nouvelle partie démarre automatiquement à la fin de la
+précédente tant que la page reste ouverte.
+
+```bash
+mvn -q exec:java -Dexec.mainClass=dames.Api
+```
+puis ouvrir http://localhost:8080. Code : [`Api.java`](src/main/java/dames/Api.java),
+[`web/`](src/main/resources/web/).
+
 ## Tests
 
 ```bash

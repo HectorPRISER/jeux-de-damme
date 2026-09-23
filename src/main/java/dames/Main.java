@@ -1,6 +1,7 @@
 package dames;
 
 import com.sun.management.ThreadMXBean;
+import java.io.PrintStream;
 import java.lang.management.ManagementFactory;
 import java.util.List;
 import java.util.Scanner;
@@ -67,7 +68,19 @@ public class Main {
         String line = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "";
         Color strategicColor = line.startsWith("n") ? Color.BLACK : Color.WHITE;
         int depth = chooseDepth(in);
+        runBotVsBot(strategicColor, depth, System.out, 0);
+    }
 
+    /**
+     * Fait s'affronter {@link Bot} (minimax, stratégie gagnante) contre {@link RandomBot}
+     * (coups aléatoires) sans aucune saisie humaine, en affichant après chaque coup le
+     * temps, le nombre de noeuds explorés (côté minimax) et les octets alloués
+     * (équivalent Java de {@code ThreadMXBean.getThreadAllocatedBytes}, comme dans
+     * {@link Bench}) — utile pour comparer avant/après optimisation sur une partie
+     * entière. Écrit sur {@code out} (console, ou flux SSE pour {@link Api}) ; si
+     * {@code delayMillis > 0}, attend entre deux coups pour une lecture "en direct".
+     */
+    static void runBotVsBot(Color strategicColor, int depth, PrintStream out, long delayMillis) {
         Bot strategic = new Bot(depth);
         RandomBot random = new RandomBot();
         Game game = new Game();
@@ -79,9 +92,9 @@ public class Main {
         long totalNodes = 0;
         int plies = 0;
 
-        while (!game.isOver()) {
-            System.out.println();
-            System.out.print(game.board());
+        while (!game.isOver() && !out.checkError()) {
+            out.println();
+            out.print(game.board());
             Color turn = game.turn();
             boolean isStrategic = turn == strategicColor;
             String name = (turn == Color.WHITE ? "Blancs" : "Noirs") + (isStrategic ? " (bot minimax d=" + depth + ")" : " (bot random)");
@@ -98,20 +111,30 @@ public class Main {
             plies++;
             if (isStrategic) {
                 totalNodes += strategic.nodesExplored();
-                System.out.printf("%s > %s   [%.1f ms, %d noeuds, %.1f Ko]%n",
+                out.printf("%s > %s   [%.1f ms, %d noeuds, %.1f Ko]%n",
                         name, move, elapsed / 1e6, strategic.nodesExplored(), allocated / 1024.0);
             } else {
-                System.out.printf("%s > %s   [%.2f ms, %.1f Ko]%n", name, move, elapsed / 1e6, allocated / 1024.0);
+                out.printf("%s > %s   [%.2f ms, %.1f Ko]%n", name, move, elapsed / 1e6, allocated / 1024.0);
             }
             game.play(move);
+            sleep(delayMillis);
         }
 
-        System.out.println();
-        System.out.print(game.board());
-        System.out.println("Victoire des " + (game.winner() == Color.WHITE ? "Blancs" : "Noirs") + " !");
-        System.out.printf("Total : %d coups, %.0f ms cumulées, %.1f Mo allouées, %d noeuds minimax (%.0f noeuds/s)%n",
+        out.println();
+        out.print(game.board());
+        out.println("Victoire des " + (game.winner() == Color.WHITE ? "Blancs" : "Noirs") + " !");
+        out.printf("Total : %d coups, %.0f ms cumulées, %.1f Mo allouées, %d noeuds minimax (%.0f noeuds/s)%n",
                 plies, totalNanos / 1e6, totalAllocated / 1_048_576.0, totalNodes,
                 totalNodes / (totalNanos / 1e9));
+    }
+
+    private static void sleep(long millis) {
+        if (millis <= 0) return;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /** Demande si l'on joue contre le bot et, si oui, la couleur qu'il incarne. Renvoie {@code null} pour un jeu à deux joueurs humains. */

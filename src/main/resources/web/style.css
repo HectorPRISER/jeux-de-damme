@@ -1,0 +1,15 @@
+body { font-family: system-ui, sans-serif; margin: 2rem; background: #1e1e1e; color: #ddd; }
+#setup { margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center; }
+h1 { color: #fff; }
+
+#term {
+  background: #0c0c0c;
+  color: #d0d0d0;
+  padding: 1rem;
+  border-radius: 6px;
+  font-family: "Courier New", monospace;
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+  height: 70vh;
+  overflow-y: auto;
+}

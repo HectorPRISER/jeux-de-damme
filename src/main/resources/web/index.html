@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Dames — parties en direct</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<h1>Dames internationales — bot vs bot, en direct</h1>
+
+<section id="setup">
+  <label>Le bot minimax joue
+    <select id="white">
+      <option value="w">les blancs</option>
+      <option value="b">les noirs</option>
+    </select>
+  </label>
+  <label>Profondeur
+    <input id="depth" type="number" value="5" min="1" max="10" style="width: 4rem">
+  </label>
+  <button id="start">Regarder une partie</button>
+</section>
+
+<pre id="term">en attente...</pre>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -41,10 +41,7 @@ public final class MoveGenerator {
         return moves;
     }
 
-    /**
-     * Explore les rafles. Les pièces prises restent sur le plateau jusqu'à la fin du coup
-     * (elles bloquent et ne peuvent être prises deux fois) ; la case de départ est vue comme vide.
-     */
+    /** Explore les rafles ; pièces prises restent sur le plateau (bloquent, non reprenables), départ vu comme vide. */
     private static void collectCaptures(Board board, Position origin, Position cur, Piece piece,
                                         List<Position> path, List<Position> captured, List<Move> out) {
         boolean extended = false;

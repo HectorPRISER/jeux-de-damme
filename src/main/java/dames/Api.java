@@ -14,14 +14,8 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 
 /**
- * Sert dans le navigateur exactement ce qui s'affiche dans le terminal en mode
- * bot vs bot ({@link Main#runBotVsBot}) : plateau, coups, métriques, ligne par
- * ligne, via Server-Sent Events (aucune dépendance ajoutée — {@code com.sun.net.httpserver}
- * fourni par le JDK). Une nouvelle partie recommence automatiquement à la fin
- * de la précédente, tant que la page reste ouverte.
- *
- * Lancer : {@code mvn -q exec:java -Dexec.mainClass=dames.Api}, puis ouvrir
- * http://localhost:8080.
+ * Diffuse dans le navigateur (SSE) ce qu'affiche {@link Main#runBotVsBot} en console.
+ * Lancer : {@code mvn -q exec:java -Dexec.mainClass=dames.Api} puis http://localhost:8080.
  */
 public final class Api {
     public static void main(String[] args) throws IOException {
@@ -34,11 +28,11 @@ public final class Api {
         System.out.println("Front sur http://localhost:" + port);
     }
 
-    /** ?white=b (noirs jouent le minimax, blancs par défaut) &depth=5 (profondeur, défaut 5). */
+    /** ?white=b (minimax joue noirs) &depth=5. */
     private static void handleStream(HttpExchange ex) throws IOException {
         Map<String, String> q = query(ex);
         Color strategicColor = "b".equalsIgnoreCase(q.get("white")) ? Color.BLACK : Color.WHITE;
-        int depth = parseDepth(q.get("depth"));
+        int depth = Main.parseDepth(q.get("depth"));
 
         ex.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
         ex.getResponseHeaders().add("Cache-Control", "no-cache");
@@ -49,28 +43,10 @@ public final class Api {
                 Main.runBotVsBot(strategicColor, depth, out, 500);
                 out.println();
                 out.println("Nouvelle partie dans 3 secondes...");
-                sleepQuiet(3000);
+                Main.sleep(3000);
             }
         } finally {
             ex.close();
-        }
-    }
-
-    private static int parseDepth(String value) {
-        if (value == null) return 5;
-        try {
-            int depth = Integer.parseInt(value);
-            return depth > 0 ? depth : 5;
-        } catch (NumberFormatException e) {
-            return 5;
-        }
-    }
-
-    private static void sleepQuiet(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 
@@ -114,7 +90,7 @@ public final class Api {
         return map;
     }
 
-    /** Convertit un flux de texte (écrit ligne par ligne par {@code println}/{@code printf}) en évènements SSE. */
+    /** Texte ligne par ligne -> évènements SSE. */
     private static final class SseOutputStream extends OutputStream {
         private final OutputStream sink;
         private final StringBuilder line = new StringBuilder();

@@ -30,12 +30,12 @@ public class Main {
 
             if (game.turn() == botColor) {
                 Move chosen = bot.chooseMove(game.board(), botColor);
-                System.out.println((botColor == Color.WHITE ? "Blancs" : "Noirs") + " (bot) > " + chosen);
+                System.out.println(botColor.label() + " (bot) > " + chosen);
                 game.play(chosen);
                 continue;
             }
 
-            String name = game.turn() == Color.WHITE ? "Blancs" : "Noirs";
+            String name = game.turn().label();
             System.out.print(name + " > ");
             if (!in.hasNextLine()) return;
             String line = in.nextLine().trim().toLowerCase();
@@ -53,16 +53,9 @@ public class Main {
         }
         System.out.println();
         System.out.print(game.board());
-        System.out.println("Victoire des " + (game.winner() == Color.WHITE ? "Blancs" : "Noirs") + " !");
+        System.out.println("Victoire des " + game.winner().label() + " !");
     }
 
-    /**
-     * Fait s'affronter {@link Bot} (minimax, stratégie gagnante) contre {@link RandomBot}
-     * (coups aléatoires) sans aucune saisie humaine, en affichant après chaque coup le
-     * temps, le nombre de noeuds explorés (côté minimax) et les octets alloués
-     * (equivalent Java de {@code ThreadMXBean.getThreadAllocatedBytes}, comme dans
-     * {@link Bench}) — utile pour comparer avant/après optimisation sur une partie entière.
-     */
     static void runBotVsBot(Scanner in) {
         System.out.print("Le bot minimax (stratégie gagnante) joue les blancs ou les noirs ? (b/n, blancs par défaut) > ");
         String line = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "";
@@ -71,15 +64,7 @@ public class Main {
         runBotVsBot(strategicColor, depth, System.out, 0);
     }
 
-    /**
-     * Fait s'affronter {@link Bot} (minimax, stratégie gagnante) contre {@link RandomBot}
-     * (coups aléatoires) sans aucune saisie humaine, en affichant après chaque coup le
-     * temps, le nombre de noeuds explorés (côté minimax) et les octets alloués
-     * (équivalent Java de {@code ThreadMXBean.getThreadAllocatedBytes}, comme dans
-     * {@link Bench}) — utile pour comparer avant/après optimisation sur une partie
-     * entière. Écrit sur {@code out} (console, ou flux SSE pour {@link Api}) ; si
-     * {@code delayMillis > 0}, attend entre deux coups pour une lecture "en direct".
-     */
+    /** {@link Bot} (minimax) vs {@link RandomBot}, métriques par coup. {@code out} : console ou flux SSE ({@link Api}). */
     static void runBotVsBot(Color strategicColor, int depth, PrintStream out, long delayMillis) {
         Bot strategic = new Bot(depth);
         RandomBot random = new RandomBot();
@@ -97,7 +82,7 @@ public class Main {
             out.print(game.board());
             Color turn = game.turn();
             boolean isStrategic = turn == strategicColor;
-            String name = (turn == Color.WHITE ? "Blancs" : "Noirs") + (isStrategic ? " (bot minimax d=" + depth + ")" : " (bot random)");
+            String name = turn.label() + (isStrategic ? " (bot minimax d=" + depth + ")" : " (bot random)");
 
             long allocBefore = bean.getThreadAllocatedBytes(threadId);
             long start = System.nanoTime();
@@ -122,13 +107,13 @@ public class Main {
 
         out.println();
         out.print(game.board());
-        out.println("Victoire des " + (game.winner() == Color.WHITE ? "Blancs" : "Noirs") + " !");
+        out.println("Victoire des " + game.winner().label() + " !");
         out.printf("Total : %d coups, %.0f ms cumulées, %.1f Mo allouées, %d noeuds minimax (%.0f noeuds/s)%n",
                 plies, totalNanos / 1e6, totalAllocated / 1_048_576.0, totalNodes,
                 totalNodes / (totalNanos / 1e9));
     }
 
-    private static void sleep(long millis) {
+    static void sleep(long millis) {
         if (millis <= 0) return;
         try {
             Thread.sleep(millis);
@@ -137,7 +122,7 @@ public class Main {
         }
     }
 
-    /** Demande si l'on joue contre le bot et, si oui, la couleur qu'il incarne. Renvoie {@code null} pour un jeu à deux joueurs humains. */
+    /** {@code null} = deux humains. */
     static Color chooseOpponent(Scanner in) {
         System.out.print("Jouer contre le bot ? (o/n) > ");
         if (!in.hasNextLine()) return null;
@@ -148,20 +133,22 @@ public class Main {
         return line.startsWith("b") ? Color.WHITE : Color.BLACK;
     }
 
-    /** Demande la profondeur de recherche du bot (niveau de difficulté). */
+    /** Profondeur minimax. */
     static int chooseDepth(Scanner in) {
         System.out.print("Niveau du bot, profondeur de recherche (défaut 5) > ");
-        if (!in.hasNextLine()) return 5;
-        String line = in.nextLine().trim();
+        return in.hasNextLine() ? parseDepth(in.nextLine().trim()) : 5;
+    }
+
+    static int parseDepth(String value) {
         try {
-            int depth = Integer.parseInt(line);
+            int depth = Integer.parseInt(value);
             return depth > 0 ? depth : 5;
         } catch (NumberFormatException e) {
             return 5;
         }
     }
 
-    /** Cherche le coup correspondant : chemin complet, sinon départ/arrivée si unique. */
+    /** Chemin complet, sinon départ/arrivée si unique. */
     static Move parse(String line, List<Move> moves) {
         try {
             String[] parts = line.split("[-x]");

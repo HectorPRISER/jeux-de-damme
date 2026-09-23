@@ -3,14 +3,7 @@ package dames;
 import com.sun.management.ThreadMXBean;
 import java.lang.management.ManagementFactory;
 
-/**
- * Métriques de performance (temps, débit, octets alloués) sur les deux points chauds
- * du projet : la génération de coups ({@link MoveGenerator}) et la recherche du bot
- * ({@link Bot}, minimax brut sans élagage). Sert de référence "avant optimisation"
- * (voir README, section Métriques de performance).
- *
- * Lancer : {@code mvn -q exec:java -Dexec.mainClass=dames.Bench}
- */
+/** Métriques (temps, débit, octets alloués) sur {@link MoveGenerator} et {@link Bot} — baseline avant optimisation. */
 public final class Bench {
     private static final ThreadMXBean BEAN = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     private static final long THREAD_ID = Thread.currentThread().threadId();

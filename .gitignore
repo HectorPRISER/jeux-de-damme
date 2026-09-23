@@ -25,3 +25,7 @@ replay_pid*
 
 # Maven
 target/
+
+# Profiling (téléchargé/généré, voir README)
+profiling/async-profiler/
+profiling/results/

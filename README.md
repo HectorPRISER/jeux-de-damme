@@ -9,17 +9,8 @@ et [Tableau avant / après](#tableau-avant--après)).
 
 ## Lancer le jeu
 
-Avec Maven :
 ```bash
 mvn -q exec:java
-```
-
-Sans Maven local, via Docker (build l'image et compile dedans) :
-```bash
-docker build -t jeux-de-damme .
-docker run -it --rm jeux-de-damme
-# ou
-docker compose run --rm dames
 ```
 
 - Saisie : `b4-c5` (déplacement), `c3-e5-g7` (rafle) ; `coups` liste les coups légaux, `q` quitte.

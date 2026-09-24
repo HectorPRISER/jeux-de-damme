@@ -1,0 +1,21 @@
+
+Self — top
+   51.5 %  dames.Position
+   15.0 %  java.lang.Object[]
+   14.9 %  java.util.ArrayList
+   10.4 %  dames.Piece[]
+    2.9 %  java.util.ImmutableCollections$List12
+    2.3 %  dames.Move
+    0.5 %  dames.Piece[][]
+    0.5 %  java.util.stream.ReferencePipeline$Head
+
+Inclusif — méthodes du projet (dames/*)
+  100.0 %  dames/Bot.chooseMove
+  100.0 %  dames/Bot.negamax
+   88.6 %  dames/MoveGenerator.legalMoves
+   28.8 %  dames/Position.plus
+   23.1 %  dames/MoveGenerator.simpleMoves
+   21.0 %  dames/MoveGenerator.collectCaptures
+   11.0 %  dames/Board.copy
+    6.0 %  dames/Board.<init>
+(5426370450 octets au total)

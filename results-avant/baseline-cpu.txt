@@ -1,0 +1,31 @@
+
+Self — top
+    8.7 %  dames/Board.get
+    6.4 %  dames/MoveGenerator.legalMoves
+    4.5 %  dames/Position.plus
+    3.5 %  dames/MoveGenerator.collectCaptures
+    3.2 %  java/util/ArrayList.<init>
+    3.1 %  dames/Move.<init>
+    2.9 %  ObjArrayKlass::allocate
+    2.5 %  java/util/Arrays.copyOf
+    2.0 %  ObjArrayKlass::multi_allocate
+    1.8 %  dames/MoveGenerator.simpleMoves
+    1.7 %  dames/Piece.color
+    1.7 %  dames/Board.copy
+
+Inclusif — méthodes du projet (dames/*)
+   62.8 %  dames/Bot.chooseMove
+   62.7 %  dames/Bot.negamax
+   47.2 %  dames/MoveGenerator.legalMoves
+   14.5 %  dames/MoveGenerator.collectCaptures
+   11.6 %  dames/Board.copy
+    9.1 %  dames/Board.<init>
+    9.0 %  dames/MoveGenerator.simpleMoves
+    8.8 %  dames/Board.get
+    4.9 %  dames/Position.plus
+    3.1 %  dames/Move.<init>
+    2.5 %  dames/Bot.evaluate
+    1.7 %  dames/Piece.color
+
+36.9 % des échantillons sont hors du code du projet (threads internes de la JVM : compilation JIT, GC...)
+(1962 échantillons au total)

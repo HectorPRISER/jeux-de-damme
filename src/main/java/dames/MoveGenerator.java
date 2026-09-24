@@ -14,9 +14,9 @@ public final class MoveGenerator {
         List<Move> simple = new ArrayList<>();
         for (int r = 0; r < Board.SIZE; r++) {
             for (int c = 0; c < Board.SIZE; c++) {
-                Position pos = new Position(r, c);
-                Piece piece = board.get(pos);
+                Piece piece = board.get(r, c);
                 if (piece == null || piece.color() != color) continue;
+                Position pos = new Position(r, c);
                 List<Position> path = new ArrayList<>(List.of(pos));
                 collectCaptures(board, pos, pos, piece, path, new ArrayList<>(), captures);
                 simple.addAll(simpleMoves(board, pos, piece));

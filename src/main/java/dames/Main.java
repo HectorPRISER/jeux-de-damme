@@ -1,8 +1,5 @@
 package dames;
 
-import com.sun.management.ThreadMXBean;
-import java.io.PrintStream;
-import java.lang.management.ManagementFactory;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
@@ -12,13 +9,6 @@ public class Main {
         Scanner in = new Scanner(System.in);
         System.out.println("Jeu de dames internationales (10x10). Blancs (w/W) en bas, noirs (b/B) en haut.");
         System.out.println("Saisie : c3-d4 (déplacement) ou c3-e5-g7 (rafle, ou juste départ-arrivée). 'coups' liste les coups, 'q' quitte.");
-
-        System.out.print("Mode : (1) humain [vs bot en option] (2) bot vs bot > ");
-        String mode = in.hasNextLine() ? in.nextLine().trim() : "1";
-        if (mode.equals("2")) {
-            runBotVsBot(in);
-            return;
-        }
 
         Color botColor = chooseOpponent(in);
         Bot bot = botColor == null ? null : new Bot(chooseDepth(in));
@@ -55,72 +45,6 @@ public class Main {
         System.out.println();
         System.out.print(game.board());
         System.out.println("Victoire des " + game.winner().label() + " !");
-    }
-
-    static void runBotVsBot(Scanner in) {
-        System.out.print("Le bot minimax (stratégie gagnante) joue les blancs ou les noirs ? (b/n, blancs par défaut) > ");
-        String line = in.hasNextLine() ? in.nextLine().trim().toLowerCase() : "";
-        Color strategicColor = line.startsWith("n") ? Color.BLACK : Color.WHITE;
-        int depth = chooseDepth(in);
-        runBotVsBot(strategicColor, depth, System.out, 0);
-    }
-
-    /** {@link Bot} (minimax) vs {@link RandomBot}, métriques par coup. {@code out} : console ou flux SSE ({@link Api}). */
-    static void runBotVsBot(Color strategicColor, int depth, PrintStream out, long delayMillis) {
-        Bot strategic = new Bot(depth);
-        RandomBot random = new RandomBot();
-        Game game = new Game();
-
-        ThreadMXBean bean = (ThreadMXBean) ManagementFactory.getThreadMXBean();
-        long threadId = Thread.currentThread().threadId();
-        long totalNanos = 0;
-        long totalAllocated = 0;
-        long totalNodes = 0;
-        int plies = 0;
-
-        while (!game.isOver() && !out.checkError()) {
-            out.println();
-            out.print(game.board());
-            Color turn = game.turn();
-            boolean isStrategic = turn == strategicColor;
-            String name = turn.label() + (isStrategic ? " (bot minimax d=" + depth + ")" : " (bot random)");
-
-            long allocBefore = bean.getThreadAllocatedBytes(threadId);
-            long start = System.nanoTime();
-            Move move = isStrategic ? strategic.chooseMove(game.board(), turn) : random.chooseMove(game.board(), turn);
-            long elapsed = System.nanoTime() - start;
-            long allocated = bean.getThreadAllocatedBytes(threadId) - allocBefore;
-            if (move == null) break;
-
-            totalNanos += elapsed;
-            totalAllocated += allocated;
-            plies++;
-            if (isStrategic) {
-                totalNodes += strategic.nodesExplored();
-                out.printf("%s > %s   [%.1f ms, %d noeuds, %.1f Ko]%n",
-                        name, move, elapsed / 1e6, strategic.nodesExplored(), allocated / 1024.0);
-            } else {
-                out.printf("%s > %s   [%.2f ms, %.1f Ko]%n", name, move, elapsed / 1e6, allocated / 1024.0);
-            }
-            game.play(move);
-            sleep(delayMillis);
-        }
-
-        out.println();
-        out.print(game.board());
-        out.println("Victoire des " + game.winner().label() + " !");
-        out.printf("Total : %d coups, %.0f ms cumulées, %.1f Mo allouées, %d noeuds minimax (%.0f noeuds/s)%n",
-                plies, totalNanos / 1e6, totalAllocated / 1_048_576.0, totalNodes,
-                totalNodes / (totalNanos / 1e9));
-    }
-
-    static void sleep(long millis) {
-        if (millis <= 0) return;
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 
     /** {@code null} = deux humains. */

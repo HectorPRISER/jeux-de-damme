@@ -9,116 +9,42 @@ il sert de point de départ pour mesurer puis améliorer les performances (voir 
 - Saisie : `b4-c5` (déplacement), `c3-e5-g7` (rafle) ; `coups` liste les coups légaux, `q` quitte.
 - Contre le bot : répondre `o` à « Jouer contre le bot ? », choisir sa couleur puis la profondeur de recherche.
 
-```bash
-mvn -q exec:java
+Règles : prise obligatoire et majoritaire, prise arrière des pions, dames volantes, promotion uniquement si le coup s'achève sur la dernière ligne.
+
+## Mesurer les performances
+
+Un seul script mesure les trois chiffres principaux et écrit `resultats/<nom>.md` (≈ 3 minutes) :
+
+| Mesure | Outil |
+|---|---|
+| Temps du bot | [hyperfine](https://github.com/sharkdp/hyperfine) |
+| Mémoire allouée | [`bench/Bench.java`](bench/Bench.java) |
+| Tenue du serveur sous charge | [Vegeta](https://github.com/tsenart/vegeta) sur [`Api`](src/main/java/dames/Api.java) (`GET /api/move`) |
+
 ```
-Saisie : `b4-c5` (coup), `c3-e5-g7` (rafle) ; `coups` liste les coups légaux, `q` quitte.
-Mode (1) humain [vs bot en option] ou (2) bot vs bot ([`Bot`](src/main/java/dames/Bot.java)
-minimax vs [`RandomBot`](src/main/java/dames/RandomBot.java), métriques par coup).
-
-## Front web — parties en direct
-
-Mirror navigateur du mode bot vs bot console, via SSE (`com.sun.net.httpserver`,
-zéro dépendance).
-
-```bash
-mvn -q exec:java -Dexec.mainClass=dames.Api
+python3 mesures.py avant    # avant optimisation -> resultats/avant.md
+python3 mesures.py apres    # après optimisation -> resultats/apres.md
 ```
-puis http://localhost:8080. Port pris (ex. Traefik) ? `-Dexec.args="9090"`.
-Code : [`Api.java`](src/main/java/dames/Api.java), [`web/`](src/main/resources/web/).
 
-## Les outils de mesure
+Prérequis (une fois) : `sudo dnf install hyperfine` et `go install github.com/tsenart/vegeta/v12@latest`.
+Conditions : chargeur branché, navigateur fermé, ne rien lancer pendant la mesure (le script signale les conditions
+douteuses par un ⚠). Après optimisation, les coups joués doivent rester **identiques** (ils sont notés dans le fichier).
 
-Trois outils, trois questions :
+### Où le temps passe (optionnel) : `./profile.sh <nom>`
 
-| Question | Outil | Commande |
-|---|---|---|
-| Combien de temps ça prend ? | [hyperfine](https://github.com/sharkdp/hyperfine) | `./run_benchmarks.sh` |
-| Où le temps passe-t-il ? | [async-profiler](https://github.com/async-profiler/async-profiler) (flamegraph) | `./profile.sh baseline` |
-| Combien de clients simultanés tient le serveur ? | [`tools/load_test.py`](tools/load_test.py) | `python3 tools/load_test.py 20 15 5` |
-
-**Mise en place (une fois)** — il faut aussi Java 21 et `python3` :
+Profil CPU et allocations avec [async-profiler](https://github.com/async-profiler/async-profiler), dans
+`profiling/results/` : flamegraphs `<nom>-cpu.html` / `<nom>-alloc.html` (à ouvrir dans le navigateur, `Ctrl+F` cherche une
+méthode) et résumés en pourcentages `<nom>-cpu.txt` / `<nom>-alloc.txt`. Installation (une fois) :
 ```
-sudo dnf install hyperfine
 mkdir -p profiling && curl -sL https://github.com/async-profiler/async-profiler/releases/download/v4.5/async-profiler-4.5-linux-x64.tar.gz \
   | tar -xz -C profiling && mv profiling/async-profiler-4.5-linux-x64 profiling/async-profiler
 ```
 
-### Mesurer : `./run_benchmarks.sh`
-
-Une seule commande. Le script :
-1. compile la version de départ (tag git `baseline`) et la version courante ;
-2. note le matériel et la version de Java dans `results/env.txt` ;
-3. vérifie que les deux versions **jouent les mêmes coups** (une optimisation ne doit pas changer le résultat) ;
-4. mesure le temps des deux avec hyperfine (3 exécutions de chauffe jetées, puis 15 mesurées) ;
-5. mesure les octets alloués avec [`bench/Bench.java`](bench/Bench.java) (hyperfine mesure le temps, pas la mémoire).
-
-Résultats : `results/bench.json` (mesures brutes), `results/summary.md` (moyenne, médiane, écart-type, variance, gain)
-et `results/alloc.txt` (octets alloués par appel de `legalMoves` et par recherche du bot).
-
-Réglages possibles : `DEPTH=7 RUNS=20 ./run_benchmarks.sh` (`DEPTH`, `PLIES`, `WARMUP`, `RUNS`, `JAVA_OPTS`).
-
-Pour que la mesure soit fiable : chargeur branché, navigateur et applis fermés, ne rien lancer pendant le run.
-Si l'écart-type dépasse 5 % de la moyenne, `summary.md` le signale : refaire la mesure.
-
-### Profiler : `./profile.sh <nom>`
-
-Lance le bot avec async-profiler, deux fois : profil **CPU** (quelles méthodes consomment du temps) et profil
-d'**allocations** (quels objets sont créés). Résultats dans `profiling/results/` :
-- `<nom>-cpu.html` et `<nom>-alloc.html` : flamegraphs, à ouvrir dans le navigateur. Plus une case est large, plus elle pèse ;
-  l'appelant est en bas, ce qu'il appelle est au-dessus. `Ctrl+F` cherche une méthode : elle s'affiche en magenta et
-  son pourcentage apparaît en bas à droite. Le flamegraph CPU ne montre que le thread du bot : la compilation JIT de
-  la JVM (≈ 1/3 des échantillons) en est retirée pour la lisibilité, mais reste comptée dans le `.txt`.
-- `<nom>-cpu.txt` et `<nom>-alloc.txt` : les mêmes informations en pourcentages, faciles à recopier dans un rapport.
-
-### Test de charge : `tools/load_test.py`
-
-`run_benchmarks.sh` et `profile.sh` mesurent le bot **seul**, en séquentiel. Le
-front web ([`Api`](src/main/java/dames/Api.java)) est différent : il tourne sur
-un `Executors.newCachedThreadPool()` **non borné** — chaque client SSE ouvre
-une connexion tenue par un thread dédié pendant toute la partie, et chaque
-partie lance sa propre recherche minimax. `load_test.py` répond à « que se
-passe-t-il avec plusieurs spectateurs en même temps ? » : il démarre `Api`,
-ouvre N connexions SSE concurrentes pendant T secondes, et mesure :
-- **latence de connexion** (temps jusqu'aux premiers octets) ;
-- **débit** (évènements SSE reçus / seconde, tous clients confondus) ;
-- **mémoire (RSS)** et **nombre de threads** de la JVM pendant la charge
-  (lues dans `/proc/<pid>/status`, aucune dépendance).
-
-**Pourquoi un script maison plutôt que k6/Gatling/Locust :**
-- le projet est déjà zéro-dépendance partout (`com.sun.net.httpserver`, `ThreadMXBean`,
-  scripts Python stdlib) — un outil externe casserait ce fil rouge pour un besoin simple ;
-- le endpoint testé est du **SSE** (connexion longue durée, pas requête/réponse) : k6 le
-  gère mal nativement, Gatling est faisable mais lourd pour ce cas précis ;
-- les métriques qui comptent ici — RSS et nombre de threads JVM sous charge — ne sont
-  pas fournies par un outil de charge générique ; il aurait fallu du custom à côté de
-  toute façon (lecture `/proc/<pid>/status`).
-
-k6 (ou équivalent) vaudrait le coup si le projet devenait une vraie API REST avec besoin
-de scénarios complexes (ramp-up, seuils, rapports HTML) — pas le cas ici.
-
-```bash
-mvn -q -B package -DskipTests
-python3 tools/load_test.py 20 15 5   # 20 clients, 15 s, profondeur 5
-```
-
-Résultat mesuré (même machine que la baseline ci-dessous) :
-
-| Clients concurrents | RSS départ → pic | Threads départ → pic | Débit total |
-|---|---|---|---|
-| 1  | 53 Mo → 397 Mo   | 25 → 41 | 24,7 évènements/s |
-| 20 | 53 Mo → **1 664 Mo** | 25 → 62 | 463,6 évènements/s |
-
-De 1 à 20 spectateurs : mémoire ×4,2, threads ×1,5, 0 erreur/timeout — le
-serveur tient la charge, mais chaque partie supplémentaire coûte plein pot
-(pas de limite de connexions, pas de pool de threads borné, chaque `Board.copy()`
-du minimax est dupliqué N fois en parallèle). Piste d'optimisation associée :
-borner le pool de threads et/ou le nombre de parties simultanées.
-
 ## Résultats de la baseline (avant optimisation)
 
-Mesurés le 24/09/2026 sur le code non optimisé (tag `baseline`), profondeur 6, 3 coups joués.
-Données brutes : [`results-avant/`](results-avant/).
+Mesurés le 24/09/2026 par `python3 mesures.py avant` sur le code non optimisé (secteur branché, Firefox fermé, machine
+inactive à 96 %). Fichier complet : [`resultats/avant.md`](resultats/avant.md). Profils CPU et allocations :
+[`resultats/profil-avant.md`](resultats/profil-avant.md).
 
 ### Banc d'essai
 | | |
@@ -126,28 +52,40 @@ Données brutes : [`results-avant/`](results-avant/).
 | CPU | Intel Core i7-1165G7 @ 2,8 GHz (jusqu'à 4,7 GHz), 4 cœurs / 8 threads |
 | Caches | L1d 48 Ko et L1i 32 Ko par cœur, L2 1,25 Mo par cœur, L3 12 Mo partagé, lignes de 64 octets |
 | RAM | 15 Gio |
-| OS | Fedora Linux 42, noyau 6.19.14 |
-| Runtime | OpenJDK 21.0.11, tas fixé à 1 Go (`-Xms1g -Xmx1g`) |
-| Conditions | secteur branché, Firefox fermé, charge moyenne 0,37, gouverneur CPU `powersave` |
+| OS | Fedora Linux 42 |
+| Runtime | OpenJDK 21.0.11, tas fixé à 1 Go pour la mesure du temps |
 
-### Temps (hyperfine : 3 exécutions de chauffe jetées, 15 mesurées, sans shell intermédiaire)
-| Version | Moyenne | Médiane | Écart-type | Variance | Min | Max |
-|---|---|---|---|---|---|---|
-| baseline | **1,383 s** | 1,364 s | 0,068 s (5,0 %) | 0,00468 s² | 1,307 s | 1,500 s |
-| courante (code identique) | 1,445 s | 1,446 s | 0,066 s (4,6 %) | 0,00437 s² | 1,361 s | 1,549 s |
+### Temps du bot (hyperfine : 3 exécutions de chauffe jetées, 15 mesurées ; 3 coups joués, profondeur 6)
+| Moyenne | Médiane | Écart-type | Variance | Min | Max |
+|---|---|---|---|---|---|
+| **1,355 s** | 1,374 s | 0,043 s (3,2 %) | 0,00188 s² | 1,280 s | 1,421 s |
 
-Les deux versions étant identiques, l'écart de ≈ 4 % (×0,96) est le **plancher de bruit** de la machine :
-un gain inférieur à ~10 % ne serait pas crédible.
+Lors d'un essai précédent, deux versions identiques ont donné 1,383 s et 1,445 s : la machine a un **plancher de bruit
+d'environ 4 %**, et un gain inférieur à ~10 % ne serait pas crédible.
 
-### Mémoire (`bench/Bench.java`, octets alloués exacts)
-| | Alloué | Temps |
-|---|---|---|
-| un appel de `legalMoves` | **4 992 octets** | 0,99 µs |
-| une recherche `chooseMove` (profondeur 6) | **1 971,9 Mo** | 405 ms |
+### Mémoire (octets alloués, mesure exacte)
+| | Alloué |
+|---|---|
+| un appel de `legalMoves` | **4 992 octets** |
+| une recherche `chooseMove` (profondeur 6) | **1 969,8 Mo** |
 
-Les octets sont stables d'une version à l'autre, mais le temps par appel varie de ≈ 15 % entre deux codes identiques
-(0,99 µs contre 0,86 µs) : pour le temps, se fier à hyperfine. Ramasse-miettes : 10 pauses, **9 ms** au total
-(`results-avant/gc.txt`).
+Les octets sont stables d'une mesure à l'autre (1 969,8 à 1 971,9 Mo), pas le temps par appel (0,80 à 0,99 µs) : pour le
+temps, se fier à hyperfine. Ramasse-miettes (mesure à part) : 10 pauses, **9 ms** au total.
+
+### Serveur sous charge (Vegeta, `GET /api/move`, profondeur 5, 15 s par débit)
+| Requêtes/s envoyées | Requêtes/s servies | Succès | p50 | p99 |
+|---|---|---|---|---|
+| 10 | 10,0 | 100 % | 80 ms | 118 ms |
+| 20 | 20,0 | 100 % | 75 ms | 123 ms |
+| 30 | 29,8 | 100 % | 123 ms | 170 ms |
+| 40 | 27,7 | 98 % | 6 813 ms | 10 008 ms |
+
+- **jusqu'à 30 requêtes/s, le serveur suit** : tout est servi et p99 ≤ 170 ms ;
+- **à 40 requêtes/s, il plafonne à ≈ 28 requêtes servies par seconde** : les requêtes en trop s'empilent et la latence
+  médiane passe à 6,8 s. Le taux de succès (98 %) dépend de la durée du test : lors d'un essai plus long (20 s), seules
+  39 % des requêtes répondaient avant le timeout de 10 s ;
+- une seule passe par débit : les valeurs valent à ± 15 % près (p50 à 20 requêtes/s inférieur à celui de 10, par exemple).
+  Hypothèse à vérifier pour la saturation : `Api` utilise un pool de threads non borné (`newCachedThreadPool`).
 
 ### Où passe le temps (profil CPU, 1 962 échantillons)
 ![Flamegraph CPU de la baseline](docs/baseline-cpu-flamegraph.png)
@@ -175,7 +113,7 @@ Sous `legalMoves` : `collectCaptures` 14,5 % et `simpleMoves` 9,0 %. Petits util
 
 ## Optimisation
 
-**Méthode** : un seul changement à la fois. Après chacun, lancer `./run_benchmarks.sh` : les coups sont-ils identiques ?
+**Méthode** : un seul changement à la fois. Après chacun, lancer `python3 mesures.py apres` : les coups sont-ils identiques ?
 est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on note pourquoi.
 
 **Diagnostic de départ** (chiffres détaillés dans « Résultats de la baseline ») :
@@ -195,4 +133,4 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 
 | Essai | Changement | Moyenne | Gain vs baseline | Gardé ? |
 |---|---|---|---|---|
-| 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |
+| 0 | baseline (avant optimisation) | 1,355 s ± 0,043 | ×1,00 | — |

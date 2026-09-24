@@ -9,20 +9,13 @@ public final class Bot {
     private static final double KING = 3;
 
     private final int depth;
-    private long nodes;
 
     public Bot(int depth) {
         this.depth = depth;
     }
 
-    /** Nombre de noeuds (appels à {@code negamax}) explorés lors du dernier {@link #chooseMove}. */
-    public long nodesExplored() {
-        return nodes;
-    }
-
     /** Choisit le meilleur coup pour {@code color} dans la position donnée. */
     public Move chooseMove(Board board, Color color) {
-        nodes = 0;
         List<Move> moves = MoveGenerator.legalMoves(board, color);
         if (moves.isEmpty()) return null;
 
@@ -41,7 +34,6 @@ public final class Bot {
     }
 
     private double negamax(Board board, Color color, int depth) {
-        nodes++;
         List<Move> moves = MoveGenerator.legalMoves(board, color);
         if (moves.isEmpty()) return LOSS;
         if (depth == 0) return evaluate(board, color);

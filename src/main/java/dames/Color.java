@@ -16,4 +16,8 @@ public enum Color {
     public int promotionRow() {
         return this == WHITE ? 0 : Board.SIZE - 1;
     }
+
+    public String label() {
+        return this == WHITE ? "Blancs" : "Noirs";
+    }
 }

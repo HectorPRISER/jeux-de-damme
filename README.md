@@ -9,7 +9,23 @@ il sert de point de départ pour mesurer puis améliorer les performances (voir 
 - Saisie : `b4-c5` (déplacement), `c3-e5-g7` (rafle) ; `coups` liste les coups légaux, `q` quitte.
 - Contre le bot : répondre `o` à « Jouer contre le bot ? », choisir sa couleur puis la profondeur de recherche.
 
-Règles : prise obligatoire et majoritaire, prise arrière des pions, dames volantes, promotion uniquement si le coup s'achève sur la dernière ligne.
+```bash
+mvn -q exec:java
+```
+Saisie : `b4-c5` (coup), `c3-e5-g7` (rafle) ; `coups` liste les coups légaux, `q` quitte.
+Mode (1) humain [vs bot en option] ou (2) bot vs bot ([`Bot`](src/main/java/dames/Bot.java)
+minimax vs [`RandomBot`](src/main/java/dames/RandomBot.java), métriques par coup).
+
+## Front web — parties en direct
+
+Mirror navigateur du mode bot vs bot console, via SSE (`com.sun.net.httpserver`,
+zéro dépendance).
+
+```bash
+mvn -q exec:java -Dexec.mainClass=dames.Api
+```
+puis http://localhost:8080. Port pris (ex. Traefik) ? `-Dexec.args="9090"`.
+Code : [`Api.java`](src/main/java/dames/Api.java), [`web/`](src/main/resources/web/).
 
 ## Les outils de mesure
 

@@ -1,5 +1,8 @@
 package dames;
 
+import com.sun.management.ThreadMXBean;
+import java.io.PrintStream;
+import java.lang.management.ManagementFactory;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;

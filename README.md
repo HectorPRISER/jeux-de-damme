@@ -29,12 +29,13 @@ Code : [`Api.java`](src/main/java/dames/Api.java), [`web/`](src/main/resources/w
 
 ## Les outils de mesure
 
-Deux outils, deux questions :
+Trois outils, trois questions :
 
 | Question | Outil | Commande |
 |---|---|---|
 | Combien de temps ça prend ? | [hyperfine](https://github.com/sharkdp/hyperfine) | `./run_benchmarks.sh` |
 | Où le temps passe-t-il ? | [async-profiler](https://github.com/async-profiler/async-profiler) (flamegraph) | `./profile.sh baseline` |
+| Combien de clients simultanés tient le serveur ? | [`tools/load_test.py`](tools/load_test.py) | `python3 tools/load_test.py 20 15 5` |
 
 **Mise en place (une fois)** — il faut aussi Java 21 et `python3` :
 ```
@@ -69,6 +70,50 @@ d'**allocations** (quels objets sont créés). Résultats dans `profiling/result
   son pourcentage apparaît en bas à droite. Le flamegraph CPU ne montre que le thread du bot : la compilation JIT de
   la JVM (≈ 1/3 des échantillons) en est retirée pour la lisibilité, mais reste comptée dans le `.txt`.
 - `<nom>-cpu.txt` et `<nom>-alloc.txt` : les mêmes informations en pourcentages, faciles à recopier dans un rapport.
+
+### Test de charge : `tools/load_test.py`
+
+`run_benchmarks.sh` et `profile.sh` mesurent le bot **seul**, en séquentiel. Le
+front web ([`Api`](src/main/java/dames/Api.java)) est différent : il tourne sur
+un `Executors.newCachedThreadPool()` **non borné** — chaque client SSE ouvre
+une connexion tenue par un thread dédié pendant toute la partie, et chaque
+partie lance sa propre recherche minimax. `load_test.py` répond à « que se
+passe-t-il avec plusieurs spectateurs en même temps ? » : il démarre `Api`,
+ouvre N connexions SSE concurrentes pendant T secondes, et mesure :
+- **latence de connexion** (temps jusqu'aux premiers octets) ;
+- **débit** (évènements SSE reçus / seconde, tous clients confondus) ;
+- **mémoire (RSS)** et **nombre de threads** de la JVM pendant la charge
+  (lues dans `/proc/<pid>/status`, aucune dépendance).
+
+**Pourquoi un script maison plutôt que k6/Gatling/Locust :**
+- le projet est déjà zéro-dépendance partout (`com.sun.net.httpserver`, `ThreadMXBean`,
+  scripts Python stdlib) — un outil externe casserait ce fil rouge pour un besoin simple ;
+- le endpoint testé est du **SSE** (connexion longue durée, pas requête/réponse) : k6 le
+  gère mal nativement, Gatling est faisable mais lourd pour ce cas précis ;
+- les métriques qui comptent ici — RSS et nombre de threads JVM sous charge — ne sont
+  pas fournies par un outil de charge générique ; il aurait fallu du custom à côté de
+  toute façon (lecture `/proc/<pid>/status`).
+
+k6 (ou équivalent) vaudrait le coup si le projet devenait une vraie API REST avec besoin
+de scénarios complexes (ramp-up, seuils, rapports HTML) — pas le cas ici.
+
+```bash
+mvn -q -B package -DskipTests
+python3 tools/load_test.py 20 15 5   # 20 clients, 15 s, profondeur 5
+```
+
+Résultat mesuré (même machine que la baseline ci-dessous) :
+
+| Clients concurrents | RSS départ → pic | Threads départ → pic | Débit total |
+|---|---|---|---|
+| 1  | 53 Mo → 397 Mo   | 25 → 41 | 24,7 évènements/s |
+| 20 | 53 Mo → **1 664 Mo** | 25 → 62 | 463,6 évènements/s |
+
+De 1 à 20 spectateurs : mémoire ×4,2, threads ×1,5, 0 erreur/timeout — le
+serveur tient la charge, mais chaque partie supplémentaire coûte plein pot
+(pas de limite de connexions, pas de pool de threads borné, chaque `Board.copy()`
+du minimax est dupliqué N fois en parallèle). Piste d'optimisation associée :
+borner le pool de threads et/ou le nombre de parties simultanées.
 
 ## Résultats de la baseline (avant optimisation)
 

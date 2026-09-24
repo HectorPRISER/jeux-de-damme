@@ -124,7 +124,8 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 
 | Axe | Idée | Fait |
 |---|---|---|
-| Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece`, jouer puis annuler le coup au lieu de copier | ☐ |
+| Mémoire | jouer puis annuler le coup en place (`Board.apply`/`undo`) au lieu de copier tout le plateau à chaque noeud | ☑ |
+| Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece` du tout (reste : ils sont gardés pour l'instant) | ☐ |
 | Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☐ |
 | Concurrence | un nombre fixe de threads (= cœurs physiques, ici 4) sur les coups de départ | ☐ |
 | Cache | table de transposition : ne pas recalculer une position déjà vue | ☐ |
@@ -133,4 +134,6 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 
 | Essai | Changement | Moyenne | Gain vs baseline | Gardé ? |
 |---|---|---|---|---|
+| 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |
+| 1 | `Board.apply`/`undo` en place au lieu de `copy()` (voir `dames.Bench`, pas encore mesuré via `./run_benchmarks.sh`) | `Bot.chooseMove` d=6 : 344 ms (593 ms avant) | ×1,72 | ☑ (mêmes 199 270 noeuds explorés et même coup choisi qu'avant : comportement inchangé) |
 | 0 | baseline (avant optimisation) | 1,355 s ± 0,043 | ×1,00 | — |

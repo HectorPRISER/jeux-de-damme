@@ -127,7 +127,7 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 | Mémoire | jouer puis annuler le coup en place (`Board.apply`/`undo`) au lieu de copier tout le plateau à chaque noeud | ☑ |
 | Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece` du tout (reste : ils sont gardés pour l'instant) | ☐ |
 | Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☐ |
-| Concurrence | un nombre fixe de threads (= cœurs physiques, ici 4) sur les coups de départ | ☐ |
+| Concurrence | un nombre fixe de threads (= cœurs physiques, ici 4) sur les coups de départ | ⏳ implémenté (`Bot.chooseMove`), à valider sur la machine de réf. — voir journal |
 | Cache | table de transposition : ne pas recalculer une position déjà vue | ☐ |
 
 **Journal** — une ligne par essai, y compris ceux qui échouent :
@@ -137,3 +137,4 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 | 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |
 | 1 | `Board.apply`/`undo` en place au lieu de `copy()` (voir `dames.Bench`, pas encore mesuré via `./run_benchmarks.sh`) | `Bot.chooseMove` d=6 : 344 ms (593 ms avant) | ×1,72 | ☑ (mêmes 199 270 noeuds explorés et même coup choisi qu'avant : comportement inchangé) |
 | 0 | baseline (avant optimisation) | 1,355 s ± 0,043 | ×1,00 | — |
+| 1 | pool de threads fixe sur les coups de départ (`Bot.chooseMove`) | mesuré sur sandbox de dev (20 vCPU virtualisés, **pas** la machine de réf.) : séquentiel 300-530 ms vs parallèle 436-1025 ms sur 5 runs, profondeur 6 — parallèle plus lent et plus instable, même avec pool de threads réutilisé (donc pas juste le coût de création du pool) | régression sur cette machine | ⏳ **à retester sur la machine de réf. (i7-1165G7, 4 cœurs physiques)** avant de décider — cause probable ici : contention GC (tous les threads font `Board.copy()` en même temps) et/ou vCPU partagés/non dédiés |

@@ -1,11 +1,13 @@
 # jeux-de-damme
 
-Dames internationales (10x10), Java 21, console. Projet cours d'optimisation
-backend : version **volontairement non optimisée** (allocations à chaque coup,
-concaténations, pas d'élagage alpha-bêta) — état "avant" mesuré, à optimiser
-ensuite (voir [Todolist](#todolist-optimisations) et [Tableau avant/après](#tableau-avant--après)).
+Jeu de dames internationales (10x10) en Java 21, en console, avec un bot (minimax) **volontairement non optimisé** :
+il sert de point de départ pour mesurer puis améliorer les performances (voir « Optimisation »).
 
-## Lancer
+## Jouer
+
+- Lancer : `mvn -q exec:java` — Tests : `mvn test`
+- Saisie : `b4-c5` (déplacement), `c3-e5-g7` (rafle) ; `coups` liste les coups légaux, `q` quitte.
+- Contre le bot : répondre `o` à « Jouer contre le bot ? », choisir sa couleur puis la profondeur de recherche.
 
 ```bash
 mvn -q exec:java
@@ -25,136 +27,127 @@ mvn -q exec:java -Dexec.mainClass=dames.Api
 puis http://localhost:8080. Port pris (ex. Traefik) ? `-Dexec.args="9090"`.
 Code : [`Api.java`](src/main/java/dames/Api.java), [`web/`](src/main/resources/web/).
 
-## Tests
+## Les outils de mesure
 
-```bash
-mvn test
+Deux outils, deux questions :
+
+| Question | Outil | Commande |
+|---|---|---|
+| Combien de temps ça prend ? | [hyperfine](https://github.com/sharkdp/hyperfine) | `./run_benchmarks.sh` |
+| Où le temps passe-t-il ? | [async-profiler](https://github.com/async-profiler/async-profiler) (flamegraph) | `./profile.sh baseline` |
+
+**Mise en place (une fois)** — il faut aussi Java 21 et `python3` :
 ```
-Règles : prise obligatoire et majoritaire, prise arrière, dames volantes, promotion en fin de coup.
-
-## Métriques de performance
-
-[`dames.Bench`](src/main/java/dames/Bench.java) : temps, débit et octets alloués
-(`ThreadMXBean`) sur `MoveGenerator.legalMoves` et `Bot.chooseMove`.
-
-```bash
-mvn -q -B package -DskipTests && java -cp target/classes dames.Bench
-```
-
-Baseline mesurée (JDK 21) :
-```
-MoveGenerator.legalMoves : 1,77 µs/appel, 4992 o/appel
-Bot.chooseMove d=6       : 593 ms, 199 270 noeuds, 1972,6 Mo allouées (10380 o/noeud)
-```
-~11 Ko/noeud : chaque noeud copie tout le plateau (`Board.copy()`), réalloue
-des `List`/`ArrayList`, recrée une `Position` par case évaluée.
-
-Partie bot vs bot complète : `printf "2\nb\n5\n" | java -cp target/classes dames.Main`
-Bout en bout (hyperfine) : `hyperfine --warmup 2 'sh -c "echo q | java -cp target/classes dames.Main"'`
-
-### Flamegraph (async-profiler)
-
-Setup une fois :
-```bash
+sudo dnf install hyperfine
 mkdir -p profiling && curl -sL https://github.com/async-profiler/async-profiler/releases/download/v4.5/async-profiler-4.5-linux-x64.tar.gz \
   | tar -xz -C profiling && mv profiling/async-profiler-4.5-linux-x64 profiling/async-profiler
-mkdir -p profiling/results
 ```
 
-```bash
-# 1. profiler BotBench (profondeur 7, ignoré par mvn test, lancé explicitement)
-mvn -q test -Dtest=BotBench -DargLine="-agentpath:$(pwd)/profiling/async-profiler/lib/libasyncProfiler.so=start,event=cpu,file=$(pwd)/profiling/results/cpu.jfr"
+### Mesurer : `./run_benchmarks.sh`
 
-# 2. générer le flamegraph HTML
-profiling/async-profiler/bin/jfrconv --cpu -o html profiling/results/cpu.jfr profiling/results/cpu-flamegraph.html
+Une seule commande. Le script :
+1. compile la version de départ (tag git `baseline`) et la version courante ;
+2. note le matériel et la version de Java dans `results/env.txt` ;
+3. vérifie que les deux versions **jouent les mêmes coups** (une optimisation ne doit pas changer le résultat) ;
+4. mesure le temps des deux avec hyperfine (3 exécutions de chauffe jetées, puis 15 mesurées) ;
+5. mesure les octets alloués avec [`bench/Bench.java`](bench/Bench.java) (hyperfine mesure le temps, pas la mémoire).
 
-# 3. servir (JDK ≥18, pas de dépendance)
-jwebserver -p 9090 -d profiling/results
-```
-puis http://localhost:9090/cpu-flamegraph.html.
+Résultats : `results/bench.json` (mesures brutes), `results/summary.md` (moyenne, médiane, écart-type, variance, gain)
+et `results/alloc.txt` (octets alloués par appel de `legalMoves` et par recherche du bot).
 
-### `tools/analyze_bottleneck.py` — quantifier le goulet
+Réglages possibles : `DEPTH=7 RUNS=20 ./run_benchmarks.sh` (`DEPTH`, `PLIES`, `WARMUP`, `RUNS`, `JAVA_OPTS`).
 
-Le flamegraph montre visuellement où passe le CPU ; ce script le chiffre :
-% d'échantillons dans `Board.copy()` (copie du plateau) vs `MoveGenerator`
-(génération de coups) vs `Bot.evaluate`, plus le top 10 des frames feuilles.
-Apporte : un chiffre exact à citer ("64,6% du CPU dans MoveGenerator") au lieu
-d'un "ça a l'air gros sur le flamegraph".
+Pour que la mesure soit fiable : chargeur branché, navigateur et applis fermés, ne rien lancer pendant le run.
+Si l'écart-type dépasse 5 % de la moyenne, `summary.md` le signale : refaire la mesure.
 
-```bash
-python3 tools/analyze_bottleneck.py profiling/results/cpu.jfr
-```
+### Profiler : `./profile.sh <nom>`
 
-Résultat mesuré :
-```
-Board.copy() (copie du plateau) : 161 (25.2%)
-MoveGenerator (generation)       : 413 (64.6%)
-Bot.evaluate (evaluation)        : 30 (4.7%)
-```
-→ confirme que `MoveGenerator` (pas `Board.copy()`) est le vrai goulet, avant
-même toute optimisation.
+Lance le bot avec async-profiler, deux fois : profil **CPU** (quelles méthodes consomment du temps) et profil
+d'**allocations** (quels objets sont créés). Résultats dans `profiling/results/` :
+- `<nom>-cpu.html` et `<nom>-alloc.html` : flamegraphs, à ouvrir dans le navigateur. Plus une case est large, plus elle pèse ;
+  l'appelant est en bas, ce qu'il appelle est au-dessus. `Ctrl+F` cherche une méthode : elle s'affiche en magenta et
+  son pourcentage apparaît en bas à droite. Le flamegraph CPU ne montre que le thread du bot : la compilation JIT de
+  la JVM (≈ 1/3 des échantillons) en est retirée pour la lisibilité, mais reste comptée dans le `.txt`.
+- `<nom>-cpu.txt` et `<nom>-alloc.txt` : les mêmes informations en pourcentages, faciles à recopier dans un rapport.
 
-### `tools/benchstat.py` — preuve statistique (avant/après)
+## Résultats de la baseline (avant optimisation)
 
-`Bench` donne un seul run ; le bruit machine (autre process, JIT warmup...)
-peut faire croire à un gain qui n'existe pas. Ce script relance N fois,
-calcule moyenne/écart-type, et — une fois une version optimisée disponible —
-compare les deux avec un delta et un verdict "gain confirmé" ou "bruit".
-Apporte : un gain défendable statistiquement, pas un chiffre d'un seul run.
+Mesurés le 24/09/2026 sur le code non optimisé (tag `baseline`), profondeur 6, 3 coups joués.
+Données brutes : [`results-avant/`](results-avant/).
 
-```bash
-python3 tools/benchstat.py 7                      # baseline seule (stabilité)
-python3 tools/benchstat.py 7 dames.Bench dames.BenchOptimise  # une fois l'optim faite
-```
+### Banc d'essai
+| | |
+|---|---|
+| CPU | Intel Core i7-1165G7 @ 2,8 GHz (jusqu'à 4,7 GHz), 4 cœurs / 8 threads |
+| Caches | L1d 48 Ko et L1i 32 Ko par cœur, L2 1,25 Mo par cœur, L3 12 Mo partagé, lignes de 64 octets |
+| RAM | 15 Gio |
+| OS | Fedora Linux 42, noyau 6.19.14 |
+| Runtime | OpenJDK 21.0.11, tas fixé à 1 Go (`-Xms1g -Xmx1g`) |
+| Conditions | secteur branché, Firefox fermé, charge moyenne 0,37, gouverneur CPU `powersave` |
 
-### `tools/annotate_flamegraph.py` — annoter pour le rapport
+### Temps (hyperfine : 3 exécutions de chauffe jetées, 15 mesurées, sans shell intermédiaire)
+| Version | Moyenne | Médiane | Écart-type | Variance | Min | Max |
+|---|---|---|---|---|---|---|
+| baseline | **1,383 s** | 1,364 s | 0,068 s (5,0 %) | 0,00468 s² | 1,307 s | 1,500 s |
+| courante (code identique) | 1,445 s | 1,446 s | 0,066 s (4,6 %) | 0,00437 s² | 1,361 s | 1,549 s |
 
-Dessine un rectangle + légende sur une capture PNG du flamegraph (`google-chrome
---headless --screenshot=...`), pour pointer visuellement le goulet dans le
-rapport final. Apporte : un flamegraph brut au lecteur ne dit rien sans
-légende ; l'annotation ("64% MoveGenerator") rend la capture auto-porteuse.
+Les deux versions étant identiques, l'écart de ≈ 4 % (×0,96) est le **plancher de bruit** de la machine :
+un gain inférieur à ~10 % ne serait pas crédible.
 
-```bash
-# 1. capturer le flamegraph HTML en PNG (headless, sans dépendance serveur)
-google-chrome --headless --disable-gpu --window-size=1600,1000 \
-  --screenshot=profiling/results/cpu-flamegraph.png \
-  "file://$(pwd)/profiling/results/cpu-flamegraph.html"
+### Mémoire (`bench/Bench.java`, octets alloués exacts)
+| | Alloué | Temps |
+|---|---|---|
+| un appel de `legalMoves` | **4 992 octets** | 0,99 µs |
+| une recherche `chooseMove` (profondeur 6) | **1 971,9 Mo** | 405 ms |
 
-# 2. annoter le cluster MoveGenerator (legalMoves + collectCaptures)
-python3 tools/annotate_flamegraph.py profiling/results/cpu-flamegraph.png \
-  profiling/results/cpu-flamegraph-annote.png \
-  "480,208,880,62,64% MoveGenerator"
-```
-(nécessite Pillow : `pip install pillow`)
+Les octets sont stables d'une version à l'autre, mais le temps par appel varie de ≈ 15 % entre deux codes identiques
+(0,99 µs contre 0,86 µs) : pour le temps, se fier à hyperfine. Ramasse-miettes : 10 pauses, **9 ms** au total
+(`results-avant/gc.txt`).
 
-Résultat : `profiling/results/cpu-flamegraph-annote.png` — rectangle rouge autour
-du cluster `MoveGenerator.legalMoves`/`collectCaptures`, la zone qui concentre
-~64% du CPU mesuré par `analyze_bottleneck.py` ci-dessus. Les coordonnées
-dépendent de la taille de la capture (1600×1000 ici) et du run profilé ; à
-réajuster visuellement si le flamegraph change de forme. Fichier ignoré par
-git (`profiling/results/`) — à régénérer et joindre au rapport final.
+### Où passe le temps (profil CPU, 1 962 échantillons)
+![Flamegraph CPU de la baseline](docs/baseline-cpu-flamegraph.png)
 
-## Todolist optimisations
+| Méthode | Part du CPU total |
+|---|---|
+| `Bot.chooseMove` (tout le bot) | 62,8 % |
+| dont `MoveGenerator.legalMoves` | **47,2 %**, soit **75 % du temps du bot** |
+| dont `Board.copy` | 11,6 % (`Board.<init>` : 9,1 %, l'allocation du tableau `Piece[10][10]`) |
+| hors du projet (threads de la JVM : compilation JIT, GC) | 36,9 % |
 
-- [ ] `Board.copy()` par noeud minimax → `apply`/`undo` en place
-- [ ] Élagage alpha-bêta dans `Bot.negamax` (199k noeuds explorés à d=6, sans élagage)
-- [ ] Allocations `MoveGenerator.legalMoves` (`ArrayList`/`List.of()` par case) → buffers réutilisables
-- [ ] `new Position(r, c)` dans `Bot.evaluate` → `Board.get(int, int)`
-- [ ] Concaténations `String` (`Position`/`Move`/`Board` `toString`) → buffer fixe muté par index
-- [ ] `Scanner` stdin (`Main`) : impact en bot vs bot serré ?
-- [ ] `Piece`/`Position`/`Move` en `record` → encodage compact (`int`/`byte`) ?
-- [ ] Profondeur bot vs temps de réponse : objectif chiffré (ex. profondeur 7 < 1s)
+Sous `legalMoves` : `collectCaptures` 14,5 % et `simpleMoves` 9,0 %. Petits utilitaires appelés partout dans le bot :
+`Board.get` 8,8 % et `Position.plus` 4,9 %.
 
-## Tableau avant / après
+### Allocations (profil, ≈ 5,4 Go échantillonnés)
+| Type d'objet | Part des octets |
+|---|---|
+| `Position` | **51,5 %** |
+| `Object[]` | 15,0 % |
+| `ArrayList` | 14,9 % |
+| `Piece[]` | 10,4 % |
+| autres | 8,2 % |
 
-| Optimisation | Métrique | Avant | Après |
-|---|---|---|---|
-| *(baseline)* | `Bot.chooseMove` d=6 | 593 ms, 1972,6 Mo, 10380 o/noeud | — |
-| *(baseline)* | `MoveGenerator.legalMoves` | 1,77 µs/appel, 4992 o/appel | — |
-| `Board.copy()` → apply/undo | o/noeud | 10380 | *TODO* |
-| Élagage alpha-bêta | noeuds explorés d=6 | 199 270 | *TODO* |
-| Buffers fixes `toString` | o/appel | *TODO* | *TODO* |
+88,6 % des octets sont alloués sous `legalMoves` (dont 28,8 % par `Position.plus`) et 11,0 % sous `Board.copy`.
 
-Reproduire une ligne : relancer `Bench` avant/après, reporter les chiffres.
-Preuve statistique (N répétitions) : s'inspirer de `tools/benchstat.py` du
-projet `projet-fil-rouge` voisin.
+## Optimisation
+
+**Méthode** : un seul changement à la fois. Après chacun, lancer `./run_benchmarks.sh` : les coups sont-ils identiques ?
+est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on note pourquoi.
+
+**Diagnostic de départ** (chiffres détaillés dans « Résultats de la baseline ») :
+- le goulet est `MoveGenerator.legalMoves` : **75 % du temps du bot** ;
+- son coût vient de la **création** de petits objets (≈ 5 Ko par appel), pas du ramasse-miettes : 10 pauses, 9 ms au total.
+
+**Pistes** (à cocher au fur et à mesure) :
+
+| Axe | Idée | Fait |
+|---|---|---|
+| Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece`, jouer puis annuler le coup au lieu de copier | ☐ |
+| Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☐ |
+| Concurrence | un nombre fixe de threads (= cœurs physiques, ici 4) sur les coups de départ | ☐ |
+| Cache | table de transposition : ne pas recalculer une position déjà vue | ☐ |
+
+**Journal** — une ligne par essai, y compris ceux qui échouent :
+
+| Essai | Changement | Moyenne | Gain vs baseline | Gardé ? |
+|---|---|---|---|---|
+| 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |

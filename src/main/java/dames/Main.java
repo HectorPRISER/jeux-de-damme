@@ -1,8 +1,6 @@
 package dames;
 
-import com.sun.management.ThreadMXBean;
-import java.io.PrintStream;
-import java.lang.management.ManagementFactory;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
 
@@ -153,7 +151,7 @@ public class Main {
         try {
             String[] parts = line.split("[-x]");
             if (parts.length < 2) return null;
-            List<Position> squares = java.util.Arrays.stream(parts).map(Position::parse).toList();
+            List<Position> squares = Arrays.stream(parts).map(Position::parse).toList();
             for (Move m : moves) {
                 if (m.squares().equals(squares)) return m;
             }

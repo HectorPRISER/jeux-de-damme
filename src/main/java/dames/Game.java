@@ -4,7 +4,7 @@ import java.util.List;
 
 public class Game {
     private final Board board;
-    private Color turn = Color.WHITE;
+    private Color turn;
 
     public Game() {
         this(Board.initial(), Color.WHITE);

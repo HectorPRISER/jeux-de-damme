@@ -1,0 +1,6 @@
+--- baseline
+legalMoves    : 0,99 µs/appel, 4992 o/appel
+chooseMove d=6: 405 ms, 1971,9 Mo alloués
+--- current
+legalMoves    : 0,86 µs/appel, 4992 o/appel
+chooseMove d=6: 397 ms, 1969,8 Mo alloués

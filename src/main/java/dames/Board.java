@@ -55,6 +55,13 @@ public class Board {
         return get(p) == null;
     }
 
+    /** Copie indépendante du plateau — pour isoler un thread (racine du minimax), pas pour la boucle chaude (voir apply/undo). */
+    public Board copy() {
+        Board b = new Board();
+        System.arraycopy(cells, 0, b.cells, 0, cells.length);
+        return b;
+    }
+
     /** Ce qu'il faut pour annuler un {@link #apply} : la pièce déplacée (avant promotion) et les pièces prises. */
     public record Undo(Piece movedPiece, Piece[] capturedPieces) {}
 

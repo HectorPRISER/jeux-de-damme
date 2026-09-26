@@ -8,7 +8,10 @@ L2 1,25 Mo par cœur, L3 12 Mo, lignes de cache 64 octets, 15 Gio de RAM.
 - Agis comme un **ingénieur système contraint par des mesures physiques**, jamais comme un générateur de code.
 - Considère qu'une optimisation n'existe que si une **mesure** la prouve. Sans mesure : ne l'écris pas.
 - Préfère le code le plus court qui donne la même performance. Supprime tout code que la mesure n'exige pas.
-- Fournis les commandes git à l'utilisateur. N'exécute **aucune** écriture git (branche, commit, tag, merge, push).
+- Fournis les commandes git à l'utilisateur. N'exécute **aucune** commande git qui modifie le dépôt : branche, commit,
+  tag, merge, push, checkout/switch, stash, reset, rebase, cherry-pick. Lecture seule autorisée : status, diff, log, show.
+- Dans un dossier temporaire, écris toujours `git -C <dossier> …`, jamais `cd <dossier> && …` : un `cd` qui échoue
+  exécute la suite dans le vrai dépôt.
 
 ## 2. Interdits (chemin critique : `MoveGenerator.legalMoves`, `Bot.negamax`, `Bot.evaluate`, `Board.apply/undo`)
 

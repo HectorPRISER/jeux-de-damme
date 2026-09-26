@@ -22,7 +22,6 @@ public class Bench {
     public static void main(String[] args) {
         int depth = args.length > 0 ? Integer.parseInt(args[0]) : 6;
         Board board = Board.initial();
-        Bot bot = new Bot(depth);
 
         int calls = 200_000;
         Result gen = measure(() -> {
@@ -30,7 +29,8 @@ public class Bench {
         });
         System.out.printf("legalMoves    : %.2f µs/appel, %d o/appel%n", gen.millis() * 1000 / calls, gen.bytes() / calls);
 
-        Result search = measure(() -> sink += bot.chooseMove(board, Color.WHITE).toString().length());
+        // Un Bot neuf (donc un cache vide) à chaque recherche : sinon les mesures suivantes réutiliseraient le cache.
+        Result search = measure(() -> sink += new Bot(depth).chooseMove(board, Color.WHITE).toString().length());
         System.out.printf("chooseMove d=%d: %.0f ms, %.1f Mo alloués%n", depth, search.millis(), search.bytes() / 1_048_576.0);
     }
 

@@ -124,19 +124,26 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 
 | Axe | Idée | Fait |
 |---|---|---|
-| Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece`, jouer puis annuler le coup au lieu de copier | ☐ |
+| Mémoire | jouer puis annuler le coup au lieu de copier tout le plateau (`Board.apply`/`undo`), tableau plat | ☑ |
+| Mémoire | supprimer les objets `Position`/`Piece` restants (listes de travail réutilisées, entiers) | ☐ |
 | Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☑ |
-| Concurrence | un nombre fixe de threads (= cœurs physiques, ici 4) sur les coups de départ | ☐ |
-| Cache | table de transposition : ne pas recalculer une position déjà vue | ☐ |
+| Concurrence | un nombre fixe de threads sur les coups de départ | ✗ échec (voir journal) |
+| Cache | table de transposition : ne pas recalculer une position déjà vue | ☑ |
 
-**Journal** — une ligne par essai, y compris ceux qui échouent :
+**Journal** — une ligne par essai, y compris ceux qui échouent. Chaque gain est celui **de l'étape**, comparé à l'état
+juste avant, mesuré dans la même session :
 
-| Essai | Changement | Moyenne | Gain vs baseline | Gardé ? |
+| Essai | Changement | Mesure | Gain de l'étape | Gardé ? |
 |---|---|---|---|---|
-| 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |
-| 1 | `Board.apply`/`undo` en place au lieu de `copy()` (voir `dames.Bench`, pas encore mesuré via `./run_benchmarks.sh`) | `Bot.chooseMove` d=6 : 344 ms (593 ms avant) | ×1,72 | ☑ (mêmes 199 270 noeuds explorés et même coup choisi qu'avant : comportement inchangé) |
-| 0 | baseline (avant optimisation) | 1,355 s ± 0,043 | ×1,00 | — |
-| 1 | Élagage alpha-bêta | 0,137 s ± 0,015 | **×9,9** | oui |
+| 0 | baseline (version de départ) | 1,355 s ± 0,043 (profondeur 6) | — | — |
+| 1 | Mémoire : `Board.apply`/`undo` au lieu de copier le plateau, tableau plat, moins d'objets `Position` | 1,284 s ± 0,040, contre 1,508 s ± 0,050 pour la baseline de la même session (profondeur 6) | ×1,17 | oui |
+| 2 | Élagage alpha-bêta | 0,137 s ± 0,015, contre 1,355 s (profondeur 6, mesuré seul) | **×9,9** | oui |
+| 3 | Pool de threads sur les coups de départ | 1,305 s ± 0,072, contre 1,514 s (profondeur 6), mais 3,5× plus de CPU | ×1,16 | non : échec (branche `concurrence`) |
+| 4 | Cache : table de transposition | 0,589 s ± 0,017, contre 1,099 s (profondeur 10, sur mémoire + alpha-bêta) | **×1,87** | oui |
+
+Les lignes 1 à 3 sont mesurées à profondeur 6 et la ligne 4 à profondeur 10 : à profondeur 6, le gain du cache disparaît
+dans le temps de démarrage de la JVM. Le tableau de synthèse final (baseline contre version finale) sera fait une fois
+toutes les optimisations fusionnées.
 
 ### Comparaison avant / après l'élagage alpha-bêta
 
@@ -167,3 +174,63 @@ Mesures officielles du 24/09/2026, même script, mêmes conditions (secteur bran
   maximale. À 40 req/s, la latence « avant » est plafonnée par le timeout de 10 s, donc le vrai gain est plus grand ;
 - **bruit** : l'écart-type relatif est de 11 % sur 0,137 s (durée courte), mais un gain ×10 le dépasse très largement ;
   une seule passe Vegeta par débit, soit ± 15 % de précision.
+
+### Comparaison avant / après le cache (table de transposition)
+
+**Le principe, en clair.** Pour choisir un coup, le bot explore un arbre de coups possibles. Or une même position peut
+être atteinte par plusieurs chemins (jouer A puis B donne la même position que B puis A). Sans cache, le bot la
+recalcule à chaque fois. Le cache retient le score de chaque position déjà évaluée pour ne le calculer qu'une fois.
+
+**Comment ça marche.**
+- une position est identifiée par une **empreinte de 64 bits** (technique de Zobrist : chaque couple case/pièce a une clé
+  aléatoire, l'empreinte est le XOR des clés des pièces présentes, plus un bit pour le joueur qui a le trait) ;
+- la table est un tableau de taille fixe, créé une seule fois par `Bot` : elle ne crée aucun objet pendant la recherche ;
+- chaque entrée garde l'empreinte, le score, la **profondeur restante** et le type du score. Une entrée n'est réutilisée
+  que pour la même profondeur restante, sinon le résultat pourrait changer ;
+- l'élagage alpha-bêta ne calcule pas toujours une valeur exacte : quand il coupe une branche, il obtient seulement une
+  **borne** (« au moins X » ou « au plus X »). Le cache mémorise donc aussi ces bornes.
+
+**Pourquoi ce choix : on a mesuré avant de coder.** À profondeur 8, **57 % à 75 % des positions visitées étaient des
+doublons** (mêmes pièces, même joueur, même profondeur restante). Hypothèse : au mieux ×2,3 à ×4 sur le nombre de positions
+calculées. Deux versions ont été essayées (essai préliminaire, indicatif) :
+
+| Version du cache | Lignes de `Bot.java` | Gain sur le temps complet (profondeur 10) |
+|---|---|---|
+| **complet : valeurs exactes et bornes** | 128 (contre 71 sans cache) | **×1,8** |
+| simplifié : valeurs exactes seulement | 118 | ×1,3 |
+
+La version simplifiée économise 10 lignes mais perd plus de la moitié du gain : on a gardé la version complète, dont le code
+supplémentaire est justifié par la mesure.
+
+**Résultats officiels** (26/09/2026). Les deux versions sont mesurées à la suite, dans la même session, à profondeur 10,
+secteur branché, Firefox fermé, sans avertissement du script. Détail : [`resultats/cache.md`](resultats/cache.md).
+
+| Mesure | Avant (sans cache) | Après (avec cache) | Gain |
+|---|---|---|---|
+| Temps complet du bot (hyperfine, 15 mesures, profondeur 10, 3 coups) | 1,099 s ± 0,052 | **0,589 s ± 0,017** | **×1,87** |
+| Une recherche à profondeur 10 (JVM chauffée, cache vide au départ) | 282 ms | **99 ms** | **×2,85** |
+| Mémoire allouée par recherche | 1 460,8 Mo | **392,7 Mo** | **÷3,7** (−73 %) |
+| CPU total consommé (user + system) | 1,79 s | 1,27 s | −29 % |
+| Mémoire allouée par appel de `legalMoves` | 3 072 octets | 3 072 octets | inchangé |
+| Serveur à 40 req/s (profondeur 5) : requêtes servies | 39,9 /s (100 %) | 39,9 /s (100 %) | identique |
+| Serveur à 40 req/s : latence médiane / p99 | 46 / 49 ms | 24 / 49 ms | ×1,9 / inchangé |
+
+**Comment lire ces chiffres.**
+- **Le bot joue exactement les mêmes coups** : `b4-a5 a7-b6 d4-c5`. Vérifié en plus sur 9 000 positions contre le bot
+  d'origine (parties aléatoires, profondeurs 1 à 5), en réutilisant le même cache entre des positions différentes, ce qui
+  est un test sévère ;
+- **pourquoi la profondeur 10** : à profondeur 6, le temps total est dominé par le démarrage de la JVM (≈ 35 ms) et le gain
+  disparaît. Plus la recherche est profonde, plus il y a de doublons, donc plus le cache gagne (sur une recherche : ×1,4 à
+  profondeur 6, ×2,3 à profondeur 8, ×3 à profondeur 10, mesures préliminaires) ;
+- **×1,87 sur le temps complet mais ×2,85 sur une recherche** : le temps complet contient le démarrage de la JVM et sa
+  compilation à chaud, que le cache n'accélère pas. La recherche seule montre le gain de l'algorithme ;
+- **la mémoire baisse de 73 %** parce que le bot calcule moins de positions. Le coût *par position* ne change pas
+  (`legalMoves` alloue toujours 3 072 octets par appel) ;
+- **le cache ne ralentit pas le serveur** : l'`Api` crée un `Bot` par requête, donc une table (≈ 150 Ko à profondeur 5),
+  et le débit servi reste identique. Une seule passe à un seul débit : résultats à ± 15 % près ;
+- **coût en code** : +57 lignes dans `Bot.java` (71 → 128) ;
+- **limite** : deux positions différentes pourraient avoir la même empreinte (probabilité très faible avec 64 bits). Le bot
+  utiliserait alors une mauvaise valeur sans le savoir. Ce n'est pas arrivé (coups identiques sur 9 000 positions), mais
+  c'est théoriquement possible ;
+- pour que la mesure de mémoire reste honnête, `bench/Bench.java` crée un `Bot` neuf (donc un cache vide) à chaque recherche
+  mesurée.

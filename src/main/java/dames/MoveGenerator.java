@@ -12,14 +12,17 @@ public final class MoveGenerator {
     public static List<Move> legalMoves(Board board, Color color) {
         List<Move> captures = new ArrayList<>();
         List<Move> simple = new ArrayList<>();
+        List<Position> path = new ArrayList<>();      // listes de travail créées une fois et réutilisées pour toutes les pièces
+        List<Position> captured = new ArrayList<>();
         for (int r = 0; r < Board.SIZE; r++) {
             for (int c = 0; c < Board.SIZE; c++) {
                 Piece piece = board.get(r, c);
                 if (piece == null || piece.color() != color) continue;
                 Position pos = new Position(r, c);
-                List<Position> path = new ArrayList<>(List.of(pos));
-                collectCaptures(board, pos, pos, piece, path, new ArrayList<>(), captures);
-                simple.addAll(simpleMoves(board, pos, piece));
+                path.clear();
+                path.add(pos);
+                collectCaptures(board, pos, pos, piece, path, captured, captures);
+                simpleMoves(board, pos, piece, simple);
             }
         }
         if (captures.isEmpty()) return simple;
@@ -27,8 +30,7 @@ public final class MoveGenerator {
         return captures.stream().filter(m -> m.captured().size() == max).toList();
     }
 
-    private static List<Move> simpleMoves(Board board, Position from, Piece piece) {
-        List<Move> moves = new ArrayList<>();
+    private static void simpleMoves(Board board, Position from, Piece piece, List<Move> moves) {
         for (int[] d : DIRS) {
             if (!piece.king() && d[0] != piece.color().forward()) continue;
             Position p = from.plus(d[0], d[1]);
@@ -38,7 +40,6 @@ public final class MoveGenerator {
                 p = p.plus(d[0], d[1]);
             }
         }
-        return moves;
     }
 
     /** Explore les rafles ; pièces prises restent sur le plateau (bloquent, non reprenables), départ vu comme vide. */

@@ -1,6 +1,6 @@
 # jeux-de-damme
 
-Jeu de dames internationales (10x10) en Java 21, en console, avec un bot (minimax) **volontairement non optimisé** :
+Jeu de dames internationales (10x10) en Java 21, en console, avec un bot (minimax) **volontairement non optimisé au départ** :
 il sert de point de départ pour mesurer puis améliorer les performances (voir « Optimisation »).
 
 ## Jouer
@@ -124,9 +124,8 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 
 | Axe | Idée | Fait |
 |---|---|---|
-| Mémoire | jouer puis annuler le coup en place (`Board.apply`/`undo`) au lieu de copier tout le plateau à chaque noeud | ☑ |
-| Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece` du tout (reste : ils sont gardés pour l'instant) | ☐ |
-| Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☐ |
+| Mémoire | plateau en tableau d'entiers, plus d'objets `Position`/`Piece`, jouer puis annuler le coup au lieu de copier | ☐ |
+| Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☑ |
 | Concurrence | un nombre fixe de threads (= cœurs physiques, ici 4) sur les coups de départ | ☐ |
 | Cache | table de transposition : ne pas recalculer une position déjà vue | ☐ |
 
@@ -137,3 +136,34 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 | 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |
 | 1 | `Board.apply`/`undo` en place au lieu de `copy()` (voir `dames.Bench`, pas encore mesuré via `./run_benchmarks.sh`) | `Bot.chooseMove` d=6 : 344 ms (593 ms avant) | ×1,72 | ☑ (mêmes 199 270 noeuds explorés et même coup choisi qu'avant : comportement inchangé) |
 | 0 | baseline (avant optimisation) | 1,355 s ± 0,043 | ×1,00 | — |
+| 1 | Élagage alpha-bêta | 0,137 s ± 0,015 | **×9,9** | oui |
+
+### Comparaison avant / après l'élagage alpha-bêta
+
+Mesures officielles du 24/09/2026, même script, mêmes conditions (secteur branché, Firefox fermé) :
+[`resultats/avant.md`](resultats/avant.md) et [`resultats/apres.md`](resultats/apres.md).
+
+| Mesure | Avant | Après | Gain |
+|---|---|---|---|
+| Temps complet du bot (hyperfine, profondeur 6, 3 coups) | 1,355 s ± 0,043 | **0,137 s ± 0,015** | **×9,9** |
+| Une recherche à profondeur 6 (JVM chauffée) | 403 ms | **11 ms** | **×37** |
+| Mémoire allouée par recherche | 1 969,8 Mo | **27,6 Mo** | **÷71** |
+| Mémoire allouée par appel de `legalMoves` | 4 992 octets | 4 992 octets | inchangé |
+| Serveur à 10 req/s : p50 / p99 | 80 / 118 ms | 8 / 11 ms | ×10 / ×11 |
+| Serveur à 20 req/s : p50 / p99 | 75 / 123 ms | 8 / 51 ms | ×9 / ×2,4 |
+| Serveur à 30 req/s : p50 / p99 | 123 / 170 ms | 26 / 51 ms | ×4,7 / ×3,3 |
+| Serveur à 40 req/s : requêtes servies | 27,7 par s (98 % de succès) | **40,0 par s (100 %)** | plus de saturation |
+| Serveur à 40 req/s : p50 / p99 | 6 813 / 10 008 ms | **48 / 52 ms** | ×142 / au moins ×192 |
+
+- **Le bot joue exactement les mêmes coups** : `b4-a5 a7-b6 d4-c5`. Vérifié en plus sur 9 000 positions (parties
+  aléatoires, profondeurs 1 à 5) contre le bot d'origine : aucun coup différent ;
+- **pourquoi ×37 sur une recherche mais ×10 sur le temps complet** : le processus complet démarre une JVM à froid.
+  Environ 35 ms sont du démarrage (mesuré) et le reste du calcul avant que le compilateur JIT ait optimisé le code ;
+  la ligne « une recherche » est mesurée JVM chauffée ;
+- **pourquoi la mémoire baisse de ÷71** : l'élagage explore beaucoup moins de positions. Le coût *par position* n'a pas
+  changé (`legalMoves` alloue toujours 4 992 octets par appel) : c'est la prochaine cible (axe Mémoire) ;
+- **le serveur ne sature plus à 40 req/s** (p99 52 ms au lieu de 10 s, le timeout). Sa nouvelle limite n'est pas atteinte
+  dans ce test (débits ≤ 40), et la latence médiane monte avec le débit (8 → 48 ms) : ne pas en déduire une capacité
+  maximale. À 40 req/s, la latence « avant » est plafonnée par le timeout de 10 s, donc le vrai gain est plus grand ;
+- **bruit** : l'écart-type relatif est de 11 % sur 0,137 s (durée courte), mais un gain ×10 le dépasse très largement ;
+  une seule passe Vegeta par débit, soit ± 15 % de précision.

@@ -2,7 +2,7 @@ package dames;
 
 import java.util.List;
 
-/** IA simple : minimax (sans élagage) sur une évaluation matérielle. */
+/** IA simple : minimax avec élagage alpha-bêta sur une évaluation matérielle. */
 public final class Bot {
     private static final double LOSS = -1000;
     private static final double PAWN = 1;
@@ -23,7 +23,8 @@ public final class Bot {
         double bestScore = Double.NEGATIVE_INFINITY;
         for (Move move : moves) {
             Board.Undo undo = board.apply(move);
-            double score = -negamax(board, color.opposite(), depth - 1);
+            // Un coup qui ne dépasse pas le meilleur score déjà trouvé ne sert à rien : on peut couper tôt.
+            double score = -negamax(board, color.opposite(), depth - 1, Double.NEGATIVE_INFINITY, -bestScore);
             board.undo(move, undo);
             if (score > bestScore) {
                 bestScore = score;
@@ -33,7 +34,12 @@ public final class Bot {
         return best;
     }
 
-    private double negamax(Board board, Color color, int depth) {
+    /**
+     * Score de la position pour {@code color}. {@code alpha} est le score que {@code color} est déjà sûr d'obtenir,
+     * {@code beta} celui au-delà duquel l'adversaire évitera cette position : dès que {@code alpha >= beta}, les
+     * coups restants ne peuvent plus changer le résultat, on arrête.
+     */
+    private double negamax(Board board, Color color, int depth, double alpha, double beta) {
         List<Move> moves = MoveGenerator.legalMoves(board, color);
         if (moves.isEmpty()) return LOSS;
         if (depth == 0) return evaluate(board, color);
@@ -41,9 +47,11 @@ public final class Bot {
         double best = Double.NEGATIVE_INFINITY;
         for (Move move : moves) {
             Board.Undo undo = board.apply(move);
-            double score = -negamax(board, color.opposite(), depth - 1);
+            double score = -negamax(board, color.opposite(), depth - 1, -beta, -alpha);
             board.undo(move, undo);
             best = Math.max(best, score);
+            alpha = Math.max(alpha, score);
+            if (alpha >= beta) break;
         }
         return best;
     }

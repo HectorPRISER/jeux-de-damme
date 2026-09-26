@@ -43,53 +43,37 @@ public class Board {
         return get(p.row(), p.col());
     }
 
-    public void set(int row, int col, Piece piece) {
-        cells[index(row, col)] = piece;
-    }
-
     public void set(Position p, Piece piece) {
-        set(p.row(), p.col(), piece);
+        cells[index(p.row(), p.col())] = piece;
     }
 
     public boolean isEmpty(Position p) {
         return get(p) == null;
     }
 
-    /** Ce qu'il faut pour annuler un {@link #apply} : la pièce déplacée (avant promotion) et les pièces prises. */
-    public record Undo(Piece movedPiece, Piece[] capturedPieces) {}
+    /** De quoi annuler un coup : la pièce déplacée (avant promotion éventuelle) et les pièces prises. */
+    public record Undo(Piece moved, Piece[] captured) {}
 
-    /** Joue le coup en mutant ce plateau (pas de copie) ; retourne l'état à repasser à {@link #undo}. */
+    /** Joue le coup sur ce plateau, sans le copier : retire les pièces prises, déplace, promeut si besoin. */
     public Undo apply(Move move) {
-        Position from = move.from();
-        Piece movedPiece = get(from);
-        set(from, null);
-
-        List<Position> capturedSquares = move.captured();
-        Piece[] capturedPieces = new Piece[capturedSquares.size()];
-        for (int i = 0; i < capturedPieces.length; i++) {
-            Position p = capturedSquares.get(i);
-            capturedPieces[i] = get(p);
-            set(p, null);
+        Piece moved = get(move.from());
+        Piece[] captured = new Piece[move.captured().size()];
+        set(move.from(), null);
+        for (int i = 0; i < captured.length; i++) {
+            captured[i] = get(move.captured().get(i));
+            set(move.captured().get(i), null);
         }
-
-        Position to = move.to();
-        Piece piece = movedPiece;
-        if (!piece.king() && to.row() == piece.color().promotionRow()) {
-            piece = piece.promoted();
-        }
-        set(to, piece);
-
-        return new Undo(movedPiece, capturedPieces);
+        boolean promotes = !moved.king() && move.to().row() == moved.color().promotionRow();
+        set(move.to(), promotes ? moved.promoted() : moved);
+        return new Undo(moved, captured);
     }
 
-    /** Défait le dernier {@link #apply} de ce {@code move} sur ce plateau. */
+    /** Annule un {@link #apply} : remet la pièce déplacée et les pièces prises. */
     public void undo(Move move, Undo undo) {
         set(move.to(), null);
-        set(move.from(), undo.movedPiece());
-
-        List<Position> capturedSquares = move.captured();
-        for (int i = 0; i < undo.capturedPieces().length; i++) {
-            set(capturedSquares.get(i), undo.capturedPieces()[i]);
+        set(move.from(), undo.moved());
+        for (int i = 0; i < undo.captured().length; i++) {
+            set(move.captured().get(i), undo.captured()[i]);
         }
     }
 

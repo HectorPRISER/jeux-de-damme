@@ -125,7 +125,8 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 | Axe | Idée | Fait |
 |---|---|---|
 | Mémoire | jouer puis annuler le coup au lieu de copier tout le plateau (`Board.apply`/`undo`), tableau plat | ☑ |
-| Mémoire | supprimer les objets `Position`/`Piece` restants (listes de travail réutilisées, entiers) | ☐ |
+| Mémoire | réutiliser les listes de travail de `legalMoves` au lieu d'en créer pour chaque pièce | ☑ |
+| Mémoire | supprimer les objets `Position`/`Piece` restants (les remplacer par des entiers) | ☐ |
 | Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☑ |
 | Concurrence | un nombre fixe de threads sur les coups de départ | ✗ échec (voir journal) |
 | Cache | table de transposition : ne pas recalculer une position déjà vue | ☑ |
@@ -140,8 +141,9 @@ juste avant, mesuré dans la même session :
 | 2 | Élagage alpha-bêta | 0,137 s ± 0,015, contre 1,355 s (profondeur 6, mesuré seul) | **×9,9** | oui |
 | 3 | Pool de threads sur les coups de départ | 1,305 s ± 0,072, contre 1,514 s (profondeur 6), mais 3,5× plus de CPU | ×1,16 | non : échec (branche `concurrence`) |
 | 4 | Cache : table de transposition | 0,589 s ± 0,017, contre 1,099 s (profondeur 10, sur mémoire + alpha-bêta) | **×1,87** | oui |
+| 5 | Mémoire (zéro-allocation) : listes de travail de `legalMoves` réutilisées | 0,508 s ± 0,017, contre 0,579 s ± 0,020 (profondeur 10, sur mémoire + alpha-bêta + cache) | ×1,14 | oui |
 
-Les lignes 1 à 3 sont mesurées à profondeur 6 et la ligne 4 à profondeur 10 : à profondeur 6, le gain du cache disparaît
+Les lignes 1 à 3 sont mesurées à profondeur 6 et les lignes 4 et 5 à profondeur 10 : à profondeur 6, le gain du cache disparaît
 dans le temps de démarrage de la JVM. Le tableau de synthèse final (baseline contre version finale) sera fait une fois
 toutes les optimisations fusionnées.
 
@@ -234,3 +236,52 @@ secteur branché, Firefox fermé, sans avertissement du script. Détail : [`resu
   c'est théoriquement possible ;
 - pour que la mesure de mémoire reste honnête, `bench/Bench.java` crée un `Bot` neuf (donc un cache vide) à chaque recherche
   mesurée.
+
+### Comparaison avant / après les listes de travail réutilisées
+
+**Le principe, en clair.** Pour lister les coups d'une position, `legalMoves` examine chaque pièce du joueur, et pour
+chacune il **créait à chaque fois de nouvelles listes** (le chemin de la pièce, les pièces prises, ses coups simples), qui
+étaient jetées juste après. Avec 20 pièces, cela fait des dizaines de petits objets créés puis détruits **à chaque
+position explorée**. Désormais, `legalMoves` crée ces listes **une seule fois** au début, et les vide et les réutilise pour
+chaque pièce.
+
+**Avant / après, sur le code.**
+- avant : `List<Position> path = new ArrayList<>(List.of(pos));` et `new ArrayList<>()` **pour chaque pièce**, et
+  `simpleMoves` qui construisait puis renvoyait sa propre liste, recopiée ensuite avec `addAll` ;
+- après : `path` et `captured` créées une fois hors de la boucle, `path.clear()` avant chaque pièce, et `simpleMoves` qui
+  ajoute directement ses coups dans la liste finale. Le changement fait 7 lignes ajoutées et 6 retirées, dans un seul fichier.
+
+**Pourquoi ce choix : le profil.** Sur le code après l'alpha-bêta et la mémoire (profondeur 10), `legalMoves` représentait
+**91 % du temps du bot** et **99,3 % des octets alloués**. Dans ces allocations, les listes (`ArrayList`, tableaux
+`Object[]`, `List.of`) pesaient **46 %** des octets. Hypothèse de départ : réutiliser ces listes supprime une grande
+partie de ces allocations. Une première estimation, faite en comptant les listes créées, annonçait −60 % ; un prototype
+mesuré a donné **−35 %**, et c'est ce que la mesure officielle confirme.
+
+**Résultats officiels** (26/09/2026). Les deux versions sont mesurées à la suite, dans la même session, à profondeur 10,
+secteur branché, Firefox fermé, sans avertissement du script. Détail : [`resultats/listes.md`](resultats/listes.md).
+
+| Mesure | Avant | Après | Gain |
+|---|---|---|---|
+| Temps complet du bot (hyperfine, 15 mesures, profondeur 10, 3 coups) | 0,579 s ± 0,020 | **0,508 s ± 0,017** | **×1,14** (12 % de mieux) |
+| Mémoire allouée par appel de `legalMoves` | 3 072 octets | **2 008 octets** | −35 % |
+| Mémoire allouée par recherche | 392,7 Mo | **253,0 Mo** | −36 % |
+| Une recherche à profondeur 10 (JVM chauffée) | 87 ms | 90 ms | pas de différence mesurable |
+| CPU total consommé (user + system) | 1,217 s | 1,203 s | inchangé |
+| Serveur à 40 req/s (profondeur 5) : requêtes servies | 39,9 /s (100 %) | 39,9 /s (100 %) | identique |
+| Serveur à 40 req/s : latence médiane / p99 | 36 / 49 ms | 23 / 48 ms | ×1,6 / inchangé |
+
+**Comment lire ces chiffres, honnêtement.**
+- **Le bot joue exactement les mêmes coups** : `b4-a5 a7-b6 d4-c5`. Vérifié en plus sur 9 000 positions contre le bot
+  d'origine (parties aléatoires, profondeurs 1 à 5) ;
+- **le gain de temps est réel mais modeste** : ×1,14, juste au-dessus du seuil de crédibilité de 10 % fixé dans
+  `constitution.md`. L'écart entre les deux moyennes vaut 10 fois l'erreur de mesure, donc il n'est pas dû au hasard ;
+- **le gain de mémoire est net** (−35 %), mais **il ne se voit que sur le temps complet, pas sur une recherche JVM
+  chauffée** (87 ms contre 90 ms). Le temps complet contient la phase de démarrage, où le ramasse-miettes travaille le plus :
+  c'est là que créer moins d'objets aide. Sur une JVM déjà chauffée, le compilateur supprime déjà une partie de ces objets,
+  donc le gain de temps disparaît ;
+- **le CPU total ne baisse pas** (1,217 s contre 1,203 s) : le temps mural diminue parce que le travail du thread principal
+  diminue, pas parce que la machine travaille moins ;
+- **le serveur** : même débit servi, latence médiane de 36 à 23 ms. Une seule passe à un seul débit, résultats à ± 25 %
+  près (la même version avait donné 46 ms lors d'une autre mesure) : à ne pas sur-interpréter ;
+- **les gains ne s'additionnent pas** : ce gain est mesuré *par-dessus* le cache, qui a déjà supprimé beaucoup d'appels à
+  `legalMoves`. Le même changement donnait ×1,15 avant le cache.

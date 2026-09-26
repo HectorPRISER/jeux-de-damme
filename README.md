@@ -133,6 +133,8 @@ est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on 
 
 | Essai | Changement | Moyenne | Gain vs baseline | Gardé ? |
 |---|---|---|---|---|
+| 0 | baseline (`git tag baseline`) | 1,383 s ± 0,068 | ×1,00 | — |
+| 1 | `Board.apply`/`undo` en place au lieu de `copy()` (voir `dames.Bench`, pas encore mesuré via `./run_benchmarks.sh`) | `Bot.chooseMove` d=6 : 344 ms (593 ms avant) | ×1,72 | ☑ (mêmes 199 270 noeuds explorés et même coup choisi qu'avant : comportement inchangé) |
 | 0 | baseline (avant optimisation) | 1,355 s ± 0,043 | ×1,00 | — |
 | 1 | Élagage alpha-bêta | 0,137 s ± 0,015 | **×9,9** | oui |
 

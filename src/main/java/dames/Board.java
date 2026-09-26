@@ -1,5 +1,7 @@
 package dames;
 
+import java.util.List;
+
 public class Board {
     public static final int SIZE = 10;
 

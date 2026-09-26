@@ -22,10 +22,10 @@ public final class Bot {
         Move best = moves.get(0);
         double bestScore = Double.NEGATIVE_INFINITY;
         for (Move move : moves) {
-            Board next = board.copy();
-            next.apply(move);
+            Board.Undo undo = board.apply(move);
             // Un coup qui ne dépasse pas le meilleur score déjà trouvé ne sert à rien : on peut couper tôt.
-            double score = -negamax(next, color.opposite(), depth - 1, Double.NEGATIVE_INFINITY, -bestScore);
+            double score = -negamax(board, color.opposite(), depth - 1, Double.NEGATIVE_INFINITY, -bestScore);
+            board.undo(move, undo);
             if (score > bestScore) {
                 bestScore = score;
                 best = move;
@@ -46,9 +46,9 @@ public final class Bot {
 
         double best = Double.NEGATIVE_INFINITY;
         for (Move move : moves) {
-            Board next = board.copy();
-            next.apply(move);
-            double score = -negamax(next, color.opposite(), depth - 1, -beta, -alpha);
+            Board.Undo undo = board.apply(move);
+            double score = -negamax(board, color.opposite(), depth - 1, -beta, -alpha);
+            board.undo(move, undo);
             best = Math.max(best, score);
             alpha = Math.max(alpha, score);
             if (alpha >= beta) break;
@@ -60,7 +60,7 @@ public final class Bot {
         double score = 0;
         for (int r = 0; r < Board.SIZE; r++) {
             for (int c = 0; c < Board.SIZE; c++) {
-                Piece p = board.get(new Position(r, c));
+                Piece p = board.get(r, c);
                 if (p == null) continue;
                 double value = p.king() ? KING : PAWN;
                 score += p.color() == color ? value : -value;

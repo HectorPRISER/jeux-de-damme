@@ -178,6 +178,54 @@ Mesures officielles du 24/09/2026, même script, mêmes conditions (secteur bran
 - **bruit** : l'écart-type relatif est de 11 % sur 0,137 s (durée courte), mais un gain ×10 le dépasse très largement ;
   une seule passe Vegeta par débit, soit ± 15 % de précision.
 
+### Échec constructif : paralléliser les coups de départ (essai 3)
+
+**Hypothèse.** Le bot explore 9 coups de départ indépendants. Avec un pool de threads (`availableProcessors()` = 8 sur
+l'i7-1165G7, soit 4 cœurs physiques), on espérait diviser le temps par 4 environ.
+
+**Résultat.** Mesures du 24/09/2026 avec `python3 mesures.py`, secteur branché, Firefox fermé. Les deux versions sont
+mesurées à la suite, dans la même session, dans [`resultats/concurrence.md`](resultats/concurrence.md) : la machine
+dérive d'une session à l'autre (1,355 s le matin, 1,514 s ici), donc seule une mesure côte à côte est fiable.
+Le bot joue exactement les mêmes coups (`b4-a5 a7-b6 d4-c5`, et 9 000 positions comparées au bot d'origine).
+
+| Mesure | Avant (baseline) | Après (8 threads) | Effet |
+|---|---|---|---|
+| Temps complet du bot (hyperfine, profondeur 6, 3 coups) | 1,514 s ± 0,055 | 1,305 s ± 0,072 | **×1,16** (×4 espéré) |
+| CPU total consommé (user + system) | 2,46 s | 8,53 s | **3,5 fois plus** |
+| Mémoire totale allouée sur les 3 coups (tous threads) | ≈ 5 050 Mo | ≈ 5 062 Mo | inchangée |
+| Serveur à 30 req/s : servies, p99 | 27,3 /s, 2 819 ms | 26,0 /s, 6 529 ms | pas mieux, queue pire |
+| Serveur à 40 req/s : servies, succès | 20,6 /s, 77 % | 25,2 /s, 92 % | pas de vrai gain (bruit) |
+
+**Pourquoi ça n'optimise pas** (chaque point est mesuré) :
+1. **Le travail total ne diminue pas.** La mémoire allouée est identique (≈ 5 050 contre ≈ 5 062 Mo) : on répartit le même
+   travail sur plusieurs threads, on ne le réduit pas ;
+2. **Le plafond est la mémoire, pas le calcul.** Le bot alloue ≈ 4 Go par seconde. En lançant 2, 4 et 8 copies
+   *indépendantes* du bot séquentiel en même temps (processus séparés, aucun partage), le débit total n'est que de ×1,42,
+   ×1,65 et ×1,53. Même sans aucune synchronisation, la machine ne dépasse pas ≈ ×1,6 : espérer ×4 était impossible
+   (la cause exacte, bande passante mémoire ou cache, reste une hypothèse) ;
+3. **Les threads en plus se gênent.** Essai exploratoire, séquentiel à 1,58 s dans cette session : 2 threads → 1,14 s
+   (CPU 2,6 s), 4 threads → 1,28 s (CPU 5,9 s), 8 threads → 1,30 s (CPU 8,4 s). Le temps ne baisse presque plus alors que
+   la consommation de CPU explose ;
+4. **Sous charge, il n'y a rien à gagner.** Chaque requête lance son propre pool de 8 threads ; quand les cœurs sont déjà
+   occupés par d'autres requêtes, le serveur ne sert pas plus de requêtes (≈ 26 par seconde contre ≈ 27).
+
+Hypothèses **écartées par la mesure** : le ramasse-miettes (pauses de 9 ms contre 13 ms) et le déséquilibre entre les
+tâches (les 9 coups de départ prennent de 36 à 73 ms, ce qui autoriserait au moins ×4,7).
+
+**Ce qui marche quand même.** La latence d'une seule recherche : ×1,9 à chaud, et ×1,7 à ×1,8 sur le serveur à faible
+charge (10 et 20 req/s). C'est utile pour un joueur seul, pas pour la performance globale, et c'est payé 3,5 fois en CPU.
+
+**Décision : non retenu**, retour à la version séquentielle de `Bot.chooseMove` (code sur la branche `concurrence`,
+jamais fusionné).
+
+**Leçon.** Paralléliser un code limité par la mémoire ne sert à rien : il faut d'abord **réduire les allocations** (axe
+Mémoire). C'est cet ordre qui a été suivi ensuite : mémoire, puis cache, puis listes réutilisées.
+
+**Précautions de mesure.** `bench/Bench.java` affiche « 0,0 Mo alloués » pour la version parallèle (il ne compte que le thread
+appelant) : la mémoire ci-dessus vient du journal du ramasse-miettes, tous threads confondus. Le code utilise 8 threads
+logiques et non les 4 cœurs physiques, mais 4 threads ne font pas mieux. À 30 et 40 req/s, le serveur est au seuil de
+saturation : une seule passe par débit, résultats à ± 15 % près.
+
 ### Comparaison avant / après le cache (table de transposition)
 
 **Le principe, en clair.** Pour choisir un coup, le bot explore un arbre de coups possibles. Or une même position peut

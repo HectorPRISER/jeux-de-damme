@@ -142,10 +142,11 @@ juste avant, mesuré dans la même session :
 | 3 | Pool de threads sur les coups de départ | 1,305 s ± 0,072, contre 1,514 s (profondeur 6), mais 3,5× plus de CPU | ×1,16 | non : échec (branche `concurrence`) |
 | 4 | Cache : table de transposition | 0,589 s ± 0,017, contre 1,099 s (profondeur 10, sur mémoire + alpha-bêta) | **×1,87** | oui |
 | 5 | Mémoire (zéro-allocation) : listes de travail de `legalMoves` réutilisées | 0,508 s ± 0,017, contre 0,579 s ± 0,020 (profondeur 10, sur mémoire + alpha-bêta + cache) | ×1,14 | oui |
+| **6** | **Version finale : les optimisations gardées (1, 2, 4, 5) ensemble** | **0,108 s ± 0,006, contre 1,317 s** (profondeur 6, baseline mesurée dans la même session) ; **0,174 s contre 37,8 s à profondeur 8** | **×12 (profondeur 6), ×217 (profondeur 8)** | oui |
 
 Les lignes 1 à 3 sont mesurées à profondeur 6 et les lignes 4 et 5 à profondeur 10 : à profondeur 6, le gain du cache disparaît
-dans le temps de démarrage de la JVM. Le tableau de synthèse final (baseline contre version finale) sera fait une fois
-toutes les optimisations fusionnées.
+dans le temps de démarrage de la JVM. La ligne 6 est le bilan de toutes les optimisations gardées ensemble : voir la
+section « Synthèse finale » ci-dessous.
 
 ### Comparaison avant / après l'élagage alpha-bêta
 
@@ -285,3 +286,45 @@ secteur branché, Firefox fermé, sans avertissement du script. Détail : [`resu
   près (la même version avait donné 46 ms lors d'une autre mesure) : à ne pas sur-interpréter ;
 - **les gains ne s'additionnent pas** : ce gain est mesuré *par-dessus* le cache, qui a déjà supprimé beaucoup d'appels à
   `legalMoves`. Le même changement donnait ×1,15 avant le cache.
+
+### Synthèse finale : baseline contre version finale
+
+**Ce que compare ce tableau.** Le code de départ contre la version actuelle de `main` : mémoire, élagage alpha-bêta, cache et
+listes réutilisées, ensemble. La concurrence, en échec, n'en fait pas partie. Les deux versions sont mesurées **à la suite,
+dans la même session** (26/09/2026), avec `python3 mesures.py`, secteur branché, Firefox fermé, sans avertissement du script.
+Détail : [`resultats/final.md`](resultats/final.md).
+
+| Mesure | Baseline | Version finale | Gain |
+|---|---|---|---|
+| Temps complet du bot (hyperfine, 15 mesures, profondeur 6, 3 coups) | 1,317 s ± 0,042 | **0,108 s ± 0,006** | **×12,2** |
+| **Temps complet à profondeur 8** (baseline : 1 mesure) | **37,8 s** | **0,174 s ± 0,012** | **×217** |
+| CPU total consommé (user + system, profondeur 6) | 1,95 s | 0,25 s | ÷7,8 |
+| Une recherche à profondeur 6 (JVM chauffée) | 403 ms | **9 ms** | ≈ **×45** |
+| Mémoire allouée par recherche (profondeur 6) | 1 969,8 Mo | **6,9 Mo** | **÷285** |
+| Mémoire allouée par appel de `legalMoves` | 4 992 octets | 2 008 octets | −60 % |
+| Serveur à 10 req/s : latence médiane / p99 | 98 / 111 ms | 5 / 8 ms | ×20 / ×14 |
+| Serveur à 20 req/s : latence médiane / p99 | 64 / 115 ms | 4 / 8 ms | ×16 / ×14 |
+| Serveur à 30 req/s : latence médiane / p99 | 113 / 155 ms | 23 / 48 ms | ×4,9 / ×3,2 |
+| Serveur à 40 req/s : requêtes servies (succès) | 26,7 /s (95 %) | **39,9 /s (100 %)** | plus de saturation |
+| Serveur à 40 req/s : latence médiane / p99 | 7 088 / 10 010 ms | **23 / 48 ms** | ×308 / au moins ×208 |
+
+**Comment lire ces chiffres.**
+- **Le bot joue exactement les mêmes coups** dans les deux versions : `b4-a5 a7-b6 d4-c5`. À chaque optimisation, on a aussi
+  comparé ses choix à ceux du bot d'origine sur 9 000 positions (parties aléatoires, profondeurs 1 à 5) : aucun coup
+  différent ;
+- **pourquoi ×12 à profondeur 6 mais ×217 à profondeur 8** : à profondeur 6, la version finale ne prend plus que 0,108 s,
+  dont environ 35 ms sont le démarrage de la JVM (mesuré), qui ne se réduit pas. Plus la recherche est profonde, plus l'écart
+  se creuse, parce que l'élagage et le cache réduisent le nombre de positions explorées de façon exponentielle. À
+  profondeur 10, la baseline n'est plus mesurable en un temps raisonnable, alors que la version finale y répond en ≈ 0,5 s ;
+- **le levier principal est l'algorithme, pas la micro-optimisation** : l'alpha-bêta (×9,9 à lui seul) et le cache (×1,87)
+  pèsent bien plus que la mémoire (×1,17) et les listes réutilisées (×1,14). Réduire le *nombre* de positions calculées
+  rapporte plus que réduire le *coût* de chacune ;
+- **les gains ne se multiplient pas simplement** : le produit des gains du journal (≈ ×25) ne correspond ni au ×12 de la
+  profondeur 6 (plancher du démarrage de la JVM) ni au ×217 de la profondeur 8, car chaque gain a été mesuré à une profondeur
+  et sur un état différents, et l'un réduit la part de l'autre (le cache supprime des appels à `legalMoves`, donc le gain des
+  listes s'en trouve diminué) ;
+- **le serveur** ne sature plus : à 40 req/s, il sert toutes les requêtes (39,9 /s) avec une latence médiane de 23 ms, là où la
+  baseline plafonnait à 26,7 /s avec 7 s de latence. Une seule passe par débit : résultats à ± 15 % près ;
+- **la baseline de cette session** (1,317 s) est proche de celle du début (1,355 s) : la machine a peu dérivé ;
+- **limites** : à profondeur 8, la baseline n'a été mesurée qu'une fois (l'écart est tel que le bruit n'y change rien) ; la
+  concurrence, essayée puis abandonnée, n'est pas dans cette version.

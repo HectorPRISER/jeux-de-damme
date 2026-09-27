@@ -148,6 +148,33 @@ Les lignes 1 à 3 sont mesurées à profondeur 6 et les lignes 4 et 5 à profond
 dans le temps de démarrage de la JVM. La ligne 6 est le bilan de toutes les optimisations gardées ensemble : voir la
 section « Synthèse finale » ci-dessous.
 
+### Comparaison avant / après l'optimisation mémoire (`Board.apply`/`undo`)
+
+Mesures officielles du 24/09/2026, même session, mêmes conditions (secteur branché, Firefox fermé) :
+[`resultats/memoire.md`](resultats/memoire.md).
+
+| Mesure | Avant (copie du plateau) | Après (`apply`/`undo`) | Gain |
+|---|---|---|---|
+| Temps complet du bot (hyperfine, profondeur 6, 3 coups) | 1,508 s ± 0,050 | **1,284 s ± 0,040** | **×1,17** |
+| Une recherche à profondeur 6 (JVM chauffée) | 425 ms | **352 ms** | ×1,21 |
+| Mémoire allouée par recherche | 1 971,6 Mo | **1 379,3 Mo** | −30 % |
+| Mémoire allouée par appel de `legalMoves` | 4 992 octets | **3 072 octets** | −38 % |
+
+- **le bot joue exactement les mêmes coups** : `b4-a5 a7-b6 d4-c5`, et aucun coup différent du bot d'origine sur 9 000
+  positions (parties aléatoires, profondeurs 1 à 5) ; le nombre de nœuds explorés est aussi identique (199 270) ;
+- **le gain est celui que le profil prévoyait** : `Board.copy` pesait 11,6 % du CPU dans le profil de la baseline, donc
+  le supprimer ne pouvait pas faire gagner plus de ×1,13 environ ; on mesure ×1,17, le tableau plat et les objets
+  `Position` évités pour les cases vides aidant un peu plus ;
+- **la baisse par appel de `legalMoves`** : 4 992 − 3 072 = 1 920 octets, soit exactement 80 objets `Position` de
+  24 octets : `legalMoves` ne crée plus de `Position` pour les cases qui ne contiennent pas une pièce du joueur ;
+- **ce qui reste** : les objets `Position`, `Piece`, `ArrayList` et `Move` créés à chaque coup généré (`Position`
+  pesait 51,5 % des octets alloués dans le profil de départ) — c'est ce que règlent ensuite le cache et les listes
+  de travail réutilisées ;
+- **méthode et outillage différents des autres comparaisons** : cette mesure a été faite avec `./run_benchmarks.sh`
+  (avant `mesures.py`), d'où une baseline de session (1,508 s) différente de celle citée ailleurs (1,355 s) —
+  la machine dérive d'une session à l'autre, ce qui est justement pourquoi chaque étape compare à une baseline
+  mesurée **dans la même session**.
+
 ### Comparaison avant / après l'élagage alpha-bêta
 
 Mesures officielles du 24/09/2026, même script, mêmes conditions (secteur branché, Firefox fermé) :

@@ -1,17 +1,16 @@
 # Audit de performance : pourquoi on optimise, et ce qu'on a fait
 
 Ce document explique la démarche : le problème mesuré sur la version de départ, puis chaque solution testée et
-pourquoi. Les chiffres viennent de mesures réelles (`python3 mesures.py` et `./profile.sh`), pas d'estimations.
+pourquoi. Les chiffres viennent de mesures réelles (`python3 mesures.py` et `./profile.sh`).
 Les commandes pour rejouer ces mesures sont dans le [README](README.md).
 
-État actuel : toutes les optimisations ci-dessous sont fusionnées sur `main`, sauf la concurrence (2.3), documentée
-comme un échec et jamais fusionnée. La section 4 compare la version de départ à la version finale (mémoire +
-alpha-bêta + cache + listes réutilisées).
+État actuel : toutes les optimisations sont présentes sur la `main`, sauf la concurrence qui est un échec documenté et jamais fusionné.
+La dernière section compare la version de départ (avant optimisation) à la version finale ( avec toutes les optimisations). 
 
 ## 1. Le problème : pourquoi optimiser
 
-Le jeu et le bot sont volontairement écrits sans souci de performance, pour servir de point de départ mesurable
-(c'est l'objet du TP). Mesuré le 24/09/2026 par `python3 mesures.py avant` sur le code non optimisé (secteur branché,
+Le jeu et le bot sont volontairement écrits sans souci de performance, pour servir de point de départ mesurable.
+Mesuré par le script  `python3 mesures.py avant` sur le code non optimisé (secteur branché,
 Firefox fermé, machine inactive à 96 %). Fichier complet : [`resultats/avant.md`](resultats/avant.md). Profils CPU et
 allocations : [`resultats/profil-avant.md`](resultats/profil-avant.md).
 
@@ -98,18 +97,17 @@ requêtes répondaient avant le timeout de 10 s. Une seule passe par débit : le
 
 ## 2. Les solutions mises en place
 
-**Méthode** : un seul changement à la fois. Après chacun, on lance `python3 mesures.py` : les coups sont-ils
-identiques ? est-ce plus rapide ? On garde le changement s'il gagne, sinon on l'annule et on note pourquoi.
+**Méthode** : un seul changement à la fois. Après chacun, on lance le script `python3 mesures.py` : les coups sont-ils
+identiques ? est-ce plus rapide ? si non, on le documente comme échec. 
 
-**Pistes envisagées** (à cocher au fur et à mesure) :
+**Nos Pistes** :
 
 | Axe | Idée | Fait |
 |---|---|---|
 | Mémoire | jouer puis annuler le coup au lieu de copier tout le plateau (`Board.apply`/`undo`), tableau plat | ☑ |
 | Mémoire | réutiliser les listes de travail de `legalMoves` au lieu d'en créer pour chaque pièce | ☑ |
-| Mémoire | supprimer les objets `Position`/`Piece` restants (les remplacer par des entiers) | ☐ |
 | Arrêt précoce | élagage alpha-bêta : ne pas explorer les branches qui ne peuvent plus être meilleures | ☑ |
-| Concurrence | un nombre fixe de threads sur les coups de départ | ✗ échec (voir 2.3) |
+| Concurrence | un nombre fixe de threads sur les coups de départ | ☐ |
 | Cache | table de transposition : ne pas recalculer une position déjà vue | ☑ |
 
 **Journal** — une ligne par essai, y compris ceux qui échouent. Chaque gain est celui **de l'étape**, comparé à
@@ -120,10 +118,10 @@ l'état juste avant, mesuré dans la même session :
 | 0 | baseline (version de départ) | 1,355 s ± 0,043 (profondeur 6) | — | — |
 | 1 | Mémoire : `Board.apply`/`undo` au lieu de copier le plateau, tableau plat, moins d'objets `Position` | 1,284 s ± 0,040, contre 1,508 s ± 0,050 pour la baseline de la même session (profondeur 6) | ×1,17 | oui |
 | 2 | Élagage alpha-bêta | 0,137 s ± 0,015, contre 1,355 s (profondeur 6, mesuré seul) | **×9,9** | oui |
-| 3 | Pool de threads sur les coups de départ | 1,305 s ± 0,072, contre 1,514 s (profondeur 6), mais 3,5× plus de CPU | ×1,16 | non : échec (branche `concurrence`) |
+| 3 | Pool de threads sur les coups de départ | 1,305 s ± 0,072, contre 1,514 s (profondeur 6), mais 3,5× plus de CPU | ×1,16 | non: échec |
 | 4 | Cache : table de transposition | 0,589 s ± 0,017, contre 1,099 s (profondeur 10, sur mémoire + alpha-bêta) | **×1,87** | oui |
 | 5 | Mémoire (zéro-allocation) : listes de travail de `legalMoves` réutilisées | 0,508 s ± 0,017, contre 0,579 s ± 0,020 (profondeur 10, sur mémoire + alpha-bêta + cache) | ×1,14 | oui |
-| **6** | **Version finale : les optimisations gardées (1, 2, 4, 5) ensemble** | **0,108 s ± 0,006, contre 1,317 s** (profondeur 6, baseline mesurée dans la même session) ; **0,174 s contre 37,8 s à profondeur 8** | **×12 (profondeur 6), ×217 (profondeur 8)** | oui |
+| **6** | **Version finale : les optimisations ensemble sans l'échec** | **0,108 s ± 0,006, contre 1,317 s** (profondeur 6, baseline mesurée dans la même session) ; **0,174 s contre 37,8 s à profondeur 8** | **×12 (profondeur 6), ×217 (profondeur 8)** | oui |
 
 Les lignes 1 à 3 sont mesurées à profondeur 6 et les lignes 4 et 5 à profondeur 10 : à profondeur 6, le gain du cache
 disparaît dans le temps de démarrage de la JVM. La ligne 6 est le bilan de toutes les optimisations gardées ensemble :
@@ -153,7 +151,7 @@ une pièce du joueur en train de jouer.
 - **le bot joue exactement les mêmes coups** : `b4-a5 a7-b6 d4-c5`, et aucun coup différent du bot d'origine sur
   9 000 positions (parties aléatoires, profondeurs 1 à 5) ; le nombre de nœuds explorés est aussi identique
   (199 270) ;
-- **le gain est celui que le profil prévoyait** : `Board.copy` pesait 11,6 % du CPU, donc le supprimer ne pouvait pas
+- **le gain** : `Board.copy` pesait 11,6 % du CPU, donc le supprimer ne pouvait pas
   faire gagner plus de ×1,13 environ ; on mesure ×1,17, le tableau plat et les objets `Position` évités pour les
   cases vides aidant un peu plus ;
 - **la baisse par appel de `legalMoves`** : 4 992 − 3 072 = 1 920 octets, soit exactement 80 objets `Position` de
@@ -211,7 +209,7 @@ sont plus explorés.
 **Hypothèse.** Le bot explore 9 coups de départ indépendants. Avec un pool de threads (`availableProcessors()` = 8
 sur l'i7-1165G7, soit 4 cœurs physiques), on espérait diviser le temps par 4 environ.
 
-**Résultat.** Mesures du 24/09/2026 avec `python3 mesures.py`, secteur branché, Firefox fermé. Les deux versions
+**Résultat.** Mesures avec le script `python3 mesures.py`, secteur branché, Firefox fermé. Les deux versions
 sont mesurées à la suite, dans la même session, dans [`resultats/concurrence.md`](resultats/concurrence.md) : la
 machine dérive d'une session à l'autre (1,355 s le matin, 1,514 s ici), donc seule une mesure côte à côte est
 fiable. Le bot joue exactement les mêmes coups (`b4-a5 a7-b6 d4-c5`, et 9 000 positions comparées au bot d'origine).
@@ -244,12 +242,8 @@ les tâches (les 9 coups de départ prennent de 36 à 73 ms, ce qui autoriserait
 faible charge (10 et 20 req/s). C'est utile pour un joueur seul, pas pour la performance globale, et c'est payé 3,5
 fois en CPU.
 
-**Décision : non retenu**, retour à la version séquentielle de `Bot.chooseMove` (code sur la branche `concurrence`,
-jamais fusionné).
-
-**Leçon.** Paralléliser un code limité par la mémoire ne sert à rien : il faut d'abord **réduire les allocations**
-(axe Mémoire). C'est cet ordre qui a été suivi ensuite : mémoire, puis cache, puis listes réutilisées. Les deux
-optimisations suivantes (2.4 et 2.5) appliquent cette leçon.
+**Conclusion.** Paralléliser un code limité par la mémoire ne sert à rien : il faut d'abord **réduire les allocations**
+(axe Mémoire).q
 
 **Précautions de mesure.** `bench/Bench.java` affiche « 0,0 Mo alloués » pour la version parallèle (il ne compte
 que le thread appelant) : la mémoire ci-dessus vient du journal du ramasse-miettes, tous threads confondus. Le code
@@ -286,8 +280,8 @@ de positions calculées. Deux versions ont été essayées (essai préliminaire,
 La version simplifiée économise 10 lignes mais perd plus de la moitié du gain : on a gardé la version complète,
 dont le code supplémentaire est justifié par la mesure.
 
-**Résultats officiels** (26/09/2026). Les deux versions sont mesurées à la suite, dans la même session, à
-profondeur 10, secteur branché, Firefox fermé, sans avertissement du script. Détail :
+**Résultats officiels**. Les deux versions sont mesurées à la suite, dans la même session, à
+profondeur 10, secteur branché, Firefox fermé. Détail :
 [`resultats/cache.md`](resultats/cache.md).
 
 | Mesure | Avant (sans cache) | Après (avec cache) | Gain |
@@ -383,9 +377,7 @@ profondeur 10, secteur branché, Firefox fermé, sans avertissement du script. D
 ## 4. Synthèse finale : la version de départ contre la version finale
 
 **Ce que compare ce tableau.** Le code de départ contre la version actuelle de `main` : mémoire, élagage
-alpha-bêta, cache et listes réutilisées, ensemble. La concurrence, en échec, n'en fait pas partie. Les deux
-versions sont mesurées **à la suite, dans la même session** (26/09/2026), avec `python3 mesures.py`, secteur
-branché, Firefox fermé, sans avertissement du script. Détail : [`resultats/final.md`](resultats/final.md).
+alpha-bêta, cache et listes réutilisées, ensemble.Détail présent dans [`resultats/final.md`](resultats/final.md).
 
 | Mesure | Baseline | Version finale | Gain |
 |---|---|---|---|
